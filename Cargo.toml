@@ -1,0 +1,16 @@
+[package]
+name = "bot"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+command_handler = { version = "0.1.0", path = "plugins/command_handler" }
+kovi = "0.11.8"
+env_logger = "0.10.0"
+manager = { version = "0.1.0", path = "plugins/manager" }
+
+[workspace]
+members = ["plugins/command_handler", "plugins/manager"]
+
+[workspace.dependencies]
+kovi = "0.11.8"
