@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use crate::{duel::problem::get_recent_submission, sql};
+use crate::{duel::problem::get_last_submission, sql};
 use anyhow::Result;
 use kovi::{chrono, log::info, tokio::sync::RwLock};
 
@@ -22,14 +22,17 @@ pub async fn get_user(qq: i64) -> Option<User> {
 }
 
 /// 用户信息
+#[derive(Clone)]
 pub struct User {
     pub qq: i64,
     pub rating: i64,
     pub cf_id: Option<String>,
     bind: Option<Bind>,
     pub daily_score: i64,
+    pub last_daily: String,
 }
 
+#[derive(Clone)]
 struct Bind {
     /// 绑定的 cf 账号
     cf_id: String,
@@ -38,13 +41,20 @@ struct Bind {
 }
 
 impl User {
-    pub fn new(qq: i64, rating: i64, cf_id: Option<String>, daily_score: i64) -> Self {
+    pub fn new(
+        qq: i64,
+        rating: i64,
+        cf_id: Option<String>,
+        daily_score: i64,
+        last_daily: String,
+    ) -> Self {
         Self {
             qq,
             rating,
             cf_id,
             bind: None,
             daily_score,
+            last_daily,
         }
     }
 
@@ -60,13 +70,11 @@ impl User {
 
         let bind = bind.unwrap();
 
-        if !bind.finish().await {
-            return Err(anyhow::anyhow!("绑定失败"));
-        }
+        bind.finish().await?;
 
         self.cf_id = Some(bind.cf_id);
 
-        sql::update_user(self).await?;
+        sql::duel::user::update_user(self).await?;
 
         Ok(())
     }
@@ -78,27 +86,35 @@ impl Bind {
         Self { cf_id, start_time }
     }
 
-    async fn finish(&self) -> bool {
-        let Some(submission) = get_recent_submission(&self.cf_id).await else {
-            return false;
+    async fn finish(&self) -> Result<()> {
+        let Some(submission) = get_last_submission(&self.cf_id).await else {
+            return Err(anyhow::anyhow!("获取提交记录失败"));
         };
 
-        info!("Submission: {:?}", submission);
+        info!("Submission: {:#?}", submission);
 
-        let Some(contest_id) = submission.get("contestId").and_then(|v| v.as_i64()) else {
-            return false;
+        let Some(problem) = submission.get("problem").and_then(|v| v.as_object()) else {
+            return Err(anyhow::anyhow!("未知错误"));
         };
 
-        let Some(index) = submission.get("index").and_then(|v| v.as_str()) else {
-            return false;
+        let Some(contest_id) = problem.get("contestId").and_then(|v| v.as_i64()) else {
+            return Err(anyhow::anyhow!("未知错误"));
+        };
+
+        let Some(index) = problem.get("index").and_then(|v| v.as_str()) else {
+            return Err(anyhow::anyhow!("未知错误"));
         };
 
         let Some(verdict) = submission.get("verdict").and_then(|v| v.as_str()) else {
-            return false;
+            return Err(anyhow::anyhow!("未知错误"));
         };
 
-        if contest_id != 1 || index != "A" || verdict != "COMPILATION_ERROR" {
-            return false;
+        if contest_id != 1 || index != "A" {
+            return Err(anyhow::anyhow!("没有交到指定题目"));
+        }
+
+        if verdict != "COMPILATION_ERROR" {
+            return Err(anyhow::anyhow!("没有交 CE"));
         }
 
         let end_time = chrono::DateTime::from_timestamp(
@@ -107,15 +123,11 @@ impl Bind {
         )
         .unwrap();
 
-        if end_time < self.start_time {
-            return false;
-        }
-
         let duration = end_time - self.start_time;
-        if duration.num_seconds() > 120 {
-            return false;
+        if end_time < self.start_time || duration.num_seconds() > 120 {
+            return Err(anyhow::anyhow!("未在规定时间内提交"));
         }
 
-        true
+        Ok(())
     }
 }

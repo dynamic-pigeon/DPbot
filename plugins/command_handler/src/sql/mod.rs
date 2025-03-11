@@ -6,8 +6,7 @@ use kovi::{chrono, serde_json};
 
 use crate::duel::user::User;
 
-mod duel;
-pub(crate) use duel::*;
+pub(crate) mod duel;
 
 static POOL: LazyLock<RwLock<Option<sqlx::SqlitePool>>> = LazyLock::new(|| RwLock::new(None));
 static PATH: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| RwLock::new(None));
@@ -20,32 +19,32 @@ pub async fn init(path: &str) -> Result<()> {
     let sql = POOL.write().await;
     let sql = sql.as_ref().unwrap();
 
-    let _ = sqlx::query(
+    sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS daily_problem
-        (problem TEXT, time TEXT)
+        (context_id INTEGER, idx TEXT, rating INTEGER, time TEXT)
         "#,
     )
-    .fetch_one(sql)
-    .await;
+    .execute(sql)
+    .await?;
 
-    let _ = sqlx::query(
+    sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS user
-        (qq INTEGER PRIMARY KEY, rating INTEGER, cf_id TEXT, daily_score INTEGER)
+        (qq INTEGER PRIMARY KEY, rating INTEGER, cf_id TEXT, daily_score INTEGER, last_daily TEXT)
         "#,
     )
-    .fetch_one(sql)
-    .await;
+    .execute(sql)
+    .await?;
 
-    let _ = sqlx::query(
+    sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS duel
-        (user1 INTEGER, user2 INTEGER, time TEXT, problem TEXT, result INTEGER, started INTEGER)
+        (user1 INTEGER, user2 INTEGER, time TEXT, tags TEXT, rating INTEGER, problem TEXT, result INTEGER)
         "#,
     )
-    .fetch_one(sql)
-    .await;
+    .execute(sql)
+    .await?;
 
     Ok(())
 }
@@ -57,4 +56,19 @@ pub async fn connect(path: &str) -> Result<()> {
         .await?;
     POOL.write().await.replace(pool);
     Ok(())
+}
+
+async fn with_commit<F, T>(f: F) -> Result<T>
+where
+    F: AsyncFnOnce(&sqlx::SqlitePool) -> Result<T>,
+{
+    let sql = POOL.read().await;
+    let sql = sql.as_ref().unwrap();
+
+    let trans = sql.begin().await?;
+
+    let ret = f(sql).await?;
+
+    trans.commit().await?;
+    Ok(ret)
 }

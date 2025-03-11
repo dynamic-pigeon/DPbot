@@ -4,7 +4,7 @@ use anyhow::{Error, Result};
 use duel::handlers;
 use kovi::log::{debug, info};
 use kovi::serde_json::{self, Value};
-use kovi::{MsgEvent, PluginBuilder as plugin};
+use kovi::{Message, MsgEvent, PluginBuilder as plugin, tokio};
 
 pub(crate) mod duel;
 pub(crate) mod sql;
@@ -19,6 +19,11 @@ async fn main() {
 
     let command_path = data_path.join("command.json");
 
+    kovi::spawn(async move {
+        // 初始化题库
+        duel::problem::get_problems().await.unwrap();
+    });
+
     plugin::on_msg(move |e| {
         let command: Value =
             serde_json::from_reader(std::fs::File::open(&command_path).unwrap()).unwrap();
@@ -29,11 +34,7 @@ async fn main() {
 }
 
 async fn handle(event: Arc<MsgEvent>, command: Value) {
-    let Some(text) = event.borrow_text() else {
-        return;
-    };
-
-    info!("Received command: {:?}", text);
+    let text = mes_to_text(&event.message);
 
     let text = text.trim();
     if !text.starts_with("/") {
@@ -58,6 +59,7 @@ async fn handle(event: Arc<MsgEvent>, command: Value) {
     if changed {
         let new_text = format!("指令被解析为 /{}", args.join(" "));
         event.reply(new_text);
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 
     match cmd.as_str() {
@@ -70,10 +72,47 @@ async fn handle(event: Arc<MsgEvent>, command: Value) {
         "finish_bind" => {
             handlers::finish_bind(&event).await;
         }
+        "problem" => {
+            handlers::problem(&event, &args).await;
+        }
+        "challenge" => {
+            handlers::challenge(&event, &args).await;
+        }
+        "accept" => {
+            handlers::accept(&event).await;
+        }
+        "decline" => {
+            handlers::decline(&event).await;
+        }
+        "cancel" => {
+            handlers::cancel(&event).await;
+        }
+        "change" => {
+            handlers::change(&event).await;
+        }
+        "daily_finish" => {
+            handlers::daily_finish(&event).await;
+        }
         _ => {
             // do nothing
         }
     }
+}
+
+fn mes_to_text(msg: &Message) -> String {
+    let mut text = String::new();
+    for seg in msg.iter() {
+        match seg.type_.as_str() {
+            "text" => {
+                text.push_str(&seg.data["text"].as_str().unwrap());
+            }
+            "at" => {
+                text.push_str(seg.data["qq"].as_str().unwrap());
+            }
+            _ => {}
+        }
+    }
+    text
 }
 
 // 解析指令并替换

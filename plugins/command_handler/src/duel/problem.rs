@@ -1,25 +1,236 @@
+use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
 
-use anyhow::Error;
-use kovi::log::info;
+use anyhow::{Error, Result};
+use kovi::log::{error, info};
 use kovi::serde_json::{self, Value};
-use kovi::tokio::sync::RwLock;
-use rand::seq::SliceRandom;
+use kovi::tokio::sync::{Mutex, RwLock};
+use rand::seq::{IteratorRandom, SliceRandom};
 
-type ProblemSet = Arc<Vec<Value>>;
+type ProblemSet = Arc<Vec<Arc<Problem>>>;
 
 const URL: &str = "https://codeforces.com/api/problemset.problems";
 static PROBLEMS: LazyLock<RwLock<Option<ProblemSet>>> = LazyLock::new(|| RwLock::new(None));
 
-pub async fn get_recent_submission(cf_id: &str) -> Option<Value> {
+static DAILY_LOC: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+const MAX_DAILY_RATING: i64 = 2500;
+const TAGS: &[&str] = &[
+    "binary search",
+    "bitmasks",
+    "brute force",
+    "chinese remainder theorem",
+    "combinatorics",
+    "constructive algorithms",
+    "data structures",
+    "dfs and similar",
+    "divide and conquer",
+    "dp",
+    "dsu",
+    "expression parsing",
+    "fft",
+    "flows",
+    "games",
+    "geometry",
+    "graph matchings",
+    "graphs",
+    "greedy",
+    "hashing",
+    "implementation",
+    "interactive",
+    "math",
+    "matrices",
+    "meet-in-the-middle",
+    "number theory",
+    "probabilities",
+    "schedules",
+    "shortest paths",
+    "sortings",
+    "string suffix structures",
+    "strings",
+    "ternary search",
+    "trees",
+    "two pointers",
+    "*special problem",
+    "not-seen",
+    "new",
+];
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct Problem {
+    pub contest_id: i64,
+    pub index: String,
+    pub rating: i64,
+    pub tags: Vec<String>,
+}
+
+impl Problem {
+    pub fn from_value(value: &Value) -> Option<Self> {
+        let contest_id = value["contestId"].as_i64()?;
+        let index = value["index"].as_str()?.to_string();
+        let rating = value["rating"].as_i64()?;
+        let tags = value["tags"]
+            .as_array()?
+            .iter()
+            .map(|tag| tag.as_str().unwrap().to_string())
+            .collect();
+
+        Some(Self {
+            contest_id,
+            index,
+            rating,
+            tags,
+        })
+    }
+
+    pub fn new(contest_id: i64, index: String, rating: i64, tags: Vec<String>) -> Self {
+        Self {
+            contest_id,
+            index,
+            rating,
+            tags,
+        }
+    }
+}
+
+pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Vec<Arc<Problem>>> {
+    if rating < 800 || rating > 3500 || rating % 100 != 0 {
+        return Err(anyhow::anyhow!("rating 应该是 800 到 3500 之间的整数"));
+    }
+
+    let mut new = false;
+    let mut not_seen = false;
+
+    let tags = tags
+        .iter()
+        .filter(|tag| {
+            if *tag == "new" {
+                new = true;
+                false
+            } else if *tag == "not-seen" {
+                not_seen = true;
+                false
+            } else {
+                true
+            }
+        })
+        .map(|tag| tag.replace("_", " "))
+        .collect::<Vec<_>>();
+
+    check_tags(&tags)?;
+
+    let problems = get_problems().await?;
+
+    let seen = if not_seen {
+        let Some(cf_id) = crate::sql::duel::user::get_user(qq).await?.cf_id else {
+            return Err(anyhow::anyhow!(
+                "你还没有绑定 CF 账号，不能使用 not-seen 标签"
+            ));
+        };
+
+        let submissions = get_recent_submissions(&cf_id).await.unwrap_or_default();
+        let seen = submissions
+            .into_iter()
+            .filter(|submission| {
+                submission.get("verdict") == Some(&Value::String("OK".to_string()))
+            })
+            .map(|submission| {
+                let problem = submission["problem"].as_object().unwrap();
+                let contest_id = problem["contestId"].as_i64().unwrap();
+                let index = problem["index"].as_str().unwrap().to_string();
+                (contest_id, index)
+            })
+            .collect::<HashSet<_>>();
+        seen
+    } else {
+        HashSet::new()
+    };
+
+    let problems = problems
+        .iter()
+        // filter by rating
+        .filter(|problem| problem.rating == rating)
+        // filter by tags
+        .filter(|problem| {
+            tags.is_empty()
+                || tags
+                    .iter()
+                    .any(|tag| problem.tags.contains(&tag.to_string()))
+        })
+        // filter by special tags
+        .filter(|p| {
+            if new && p.contest_id <= 1000 {
+                return false;
+            }
+            if not_seen && seen.contains(&(p.contest_id, p.index.clone())) {
+                return false;
+            }
+            true
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    Ok(problems)
+}
+
+fn check_tags(tags: &[String]) -> Result<()> {
+    for tag in tags {
+        if !TAGS.contains(&tag.as_str()) {
+            let similar = TAGS
+                .iter()
+                .max_by_key(|&&t| {
+                    (strsim::normalized_damerau_levenshtein(t, &*tag) * 1000.0) as i64
+                })
+                .unwrap();
+
+            let diff = strsim::normalized_damerau_levenshtein(similar, tag);
+            if diff > 0.6 {
+                return Err(anyhow::anyhow!(
+                    "{tag} 不是一个合法的标签，你是不是想找 {similar}？"
+                ));
+            } else {
+                return Err(anyhow::anyhow!("{tag} 不是一个合法的标签"));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn get_recent_submissions(cf_id: &str) -> Option<Vec<Value>> {
     let res = reqwest::get(&format!(
-        "https://codeforces.com/api/user.status?handle={}&count=1",
+        "https://codeforces.com/api/user.status?handle={}",
         cf_id
     ))
     .await
     .ok()?;
 
     info!("Got response: {:?}", res);
+
+    let body = res.json::<Value>().await.ok()?;
+    let status = body["status"].as_str()?;
+    if status != "OK" {
+        return None;
+    }
+
+    match body {
+        Value::Object(mut map) => {
+            let submissions = map.remove("result")?;
+            match submissions {
+                Value::Array(submissions) => Some(submissions),
+                _ => None,
+            }
+        }
+        _ => unreachable!("Invalid response"),
+    }
+}
+
+/// 得到用户最近一次提交的信息
+pub async fn get_last_submission(cf_id: &str) -> Option<Value> {
+    let res = reqwest::get(&format!(
+        "https://codeforces.com/api/user.status?handle={}&count=1",
+        cf_id
+    ))
+    .await
+    .ok()?;
 
     let body = res.json::<Value>().await.ok()?;
     let status = body["status"].as_str()?;
@@ -37,7 +248,7 @@ pub async fn get_recent_submission(cf_id: &str) -> Option<Value> {
     submission
 }
 
-async fn fetch_problems() -> Result<Vec<Value>, Error> {
+async fn fetch_problems() -> Result<Vec<Arc<Problem>>, Error> {
     let res = reqwest::get(URL).await?;
     let body = res.json::<Value>().await?;
     let status = body["status"].as_str().unwrap();
@@ -48,19 +259,16 @@ async fn fetch_problems() -> Result<Vec<Value>, Error> {
     let problems = match &body["result"]["problems"] {
         Value::Array(prblems) => prblems
             .iter()
-            .filter(|p| {
-                let p = p.as_object().unwrap();
-                p.contains_key("rating") && p.contains_key("index") && p.contains_key("contestId")
-            })
-            .cloned()
-            .collect::<Vec<Value>>(),
+            .filter_map(Problem::from_value)
+            .map(Arc::new)
+            .collect::<Vec<Arc<Problem>>>(),
         _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
     };
 
     Ok(problems)
 }
 
-async fn get_problems() -> Result<ProblemSet, Error> {
+pub async fn get_problems() -> Result<ProblemSet, Error> {
     let problems = PROBLEMS.read().await;
     if let Some(problems) = &*problems {
         return Ok(problems.clone());
@@ -72,18 +280,29 @@ async fn get_problems() -> Result<ProblemSet, Error> {
     Ok(problems)
 }
 
-pub async fn random_problem() -> Result<serde_json::Value, Error> {
+pub async fn random_problem() -> Result<Arc<Problem>, Error> {
     let problems = get_problems().await?;
     let problem = problems.choose(&mut rand::thread_rng()).unwrap();
     Ok(problem.clone())
 }
 
-pub async fn get_daily_problem() -> Result<Value, Error> {
-    match crate::sql::get_daily_problem().await {
-        Ok(problem) => Ok(serde_json::from_str(&problem)?),
+pub async fn get_daily_problem() -> Result<Arc<Problem>, Error> {
+    let _lock = DAILY_LOC.lock().await;
+    error!("get_daily_problem");
+    match crate::sql::duel::problem::get_daily_problem().await {
+        Ok(problem) => Ok(Arc::new(problem)),
         Err(_) => {
-            let problem = random_problem().await?;
-            crate::sql::set_daily_problem(&problem.to_string()).await?;
+            let problem = match get_problems()
+                .await?
+                .iter()
+                .filter(|problem| problem.rating <= MAX_DAILY_RATING)
+                .choose(&mut rand::thread_rng())
+                .cloned()
+            {
+                Some(problem) => problem,
+                None => return Err(anyhow::anyhow!("没有找到题目，请稍后再试")),
+            };
+            crate::sql::duel::problem::set_daily_problem(&problem).await?;
             Ok(problem)
         }
     }
