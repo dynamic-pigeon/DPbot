@@ -2,3 +2,5 @@
 .vscode
 .idea
 .cargo
+data/command_handler/command.json
+data/contest/config.json
