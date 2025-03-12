@@ -1,6 +1,9 @@
 use kovi::{chrono, serde_json};
 
-use crate::{duel::challenge::Challenge, sql::POOL};
+use crate::{
+    duel::challenge::Challenge,
+    sql::{POOL, with_commit},
+};
 use anyhow::Result;
 
 pub async fn get_ongoing_challenges() -> Result<Vec<Challenge>> {
@@ -43,25 +46,25 @@ pub async fn add_challenge(challenge: &Challenge) -> Result<()> {
         .as_ref()
         .map(|problem| serde_json::to_string(problem).unwrap());
 
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
+    with_commit(async |trans| {
+        sqlx::query(
+            r#"
+            INSERT INTO duel (user1, user2, time, tags, rating, problem, result) VALUES (?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(challenge.user1)
+        .bind(challenge.user2)
+        .bind(time)
+        .bind(serde_json::to_string(&challenge.tags).unwrap())
+        .bind(challenge.rating)
+        .bind(problem)
+        .bind(challenge.result)
+        .execute(&mut **trans)
+        .await?;
 
-    sqlx::query(
-        r#"
-        INSERT INTO duel (user1, user2, time, tags, rating, problem, result) VALUES (?, ?, ?, ?, ?, ?, ?)
-        "#,
-    )
-    .bind(challenge.user1)
-    .bind(challenge.user2)
-    .bind(time)
-    .bind(serde_json::to_string(&challenge.tags).unwrap())
-    .bind(challenge.rating)
-    .bind(problem)
-    .bind(challenge.result)
-    .execute(sql)
-    .await?;
-
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 pub async fn change_problem(challenge: &Challenge) -> Result<()> {
@@ -70,59 +73,59 @@ pub async fn change_problem(challenge: &Challenge) -> Result<()> {
         .as_ref()
         .map(|problem| serde_json::to_string(problem).unwrap());
 
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
-
-    sqlx::query(
-        r#"
+    with_commit(async |trans| {
+        sqlx::query(
+            r#"
         UPDATE duel SET problem = ? WHERE user1 = ? AND user2 = ? AND time = ?
         "#,
-    )
-    .bind(problem)
-    .bind(challenge.user1)
-    .bind(challenge.user2)
-    .bind(challenge.time.to_rfc3339())
-    .execute(sql)
-    .await?;
+        )
+        .bind(problem)
+        .bind(challenge.user1)
+        .bind(challenge.user2)
+        .bind(challenge.time.to_rfc3339())
+        .execute(&mut **trans)
+        .await?;
 
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 pub async fn change_result(challenge: &Challenge) -> Result<()> {
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
+    with_commit(async |trans| {
+        sqlx::query(
+            r#"
+            UPDATE duel SET result = ? WHERE user1 = ? AND user2 = ? AND time = ?
+            "#,
+        )
+        .bind(challenge.result)
+        .bind(challenge.user1)
+        .bind(challenge.user2)
+        .bind(challenge.time.to_rfc3339())
+        .execute(&mut **trans)
+        .await?;
 
-    sqlx::query(
-        r#"
-        UPDATE duel SET result = ? WHERE user1 = ? AND user2 = ? AND time = ?
-        "#,
-    )
-    .bind(challenge.result)
-    .bind(challenge.user1)
-    .bind(challenge.user2)
-    .bind(challenge.time.to_rfc3339())
-    .execute(sql)
-    .await?;
-
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 pub async fn remove_challenge(challenge: &Challenge) -> Result<()> {
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
+    with_commit(async |trans| {
+        sqlx::query(
+            r#"
+            DELETE FROM duel WHERE user1 = ? AND user2 = ? AND time = ?
+            "#,
+        )
+        .bind(challenge.user1)
+        .bind(challenge.user2)
+        .bind(challenge.time.to_rfc3339())
+        .execute(&mut **trans)
+        .await?;
 
-    sqlx::query(
-        r#"
-        DELETE FROM duel WHERE user1 = ? AND user2 = ? AND time = ?
-        "#,
-    )
-    .bind(challenge.user1)
-    .bind(challenge.user2)
-    .bind(challenge.time.to_rfc3339())
-    .execute(sql)
-    .await?;
-
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 pub async fn get_chall_ongoing_by_user(user_id: i64) -> Result<Challenge> {

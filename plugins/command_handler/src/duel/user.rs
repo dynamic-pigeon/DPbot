@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use crate::{duel::problem::get_last_submission, sql};
+use crate::{duel::problem::get_last_submission, sql, today_utc};
 use anyhow::Result;
 use kovi::{chrono, log::info, tokio::sync::RwLock};
 
@@ -82,7 +82,7 @@ impl User {
 
 impl Bind {
     fn new(cf_id: String) -> Self {
-        let start_time = chrono::Utc::now();
+        let start_time = today_utc();
         Self { cf_id, start_time }
     }
 

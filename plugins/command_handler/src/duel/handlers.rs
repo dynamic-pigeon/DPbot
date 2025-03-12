@@ -1,13 +1,66 @@
 use kovi::{
     MsgEvent,
-    chrono::{self, format},
-    log::info,
+    chrono::{self},
+    log::debug,
 };
 use rand::seq::SliceRandom;
 
-use crate::sql;
+use crate::{sql, today_utc};
 
-use super::challenge::{self, Challenge};
+use super::challenge::Challenge;
+
+pub async fn give_up(event: &MsgEvent) {
+    let user_id = event.user_id;
+
+    let mut challenge = match sql::duel::challenge::get_chall_ongoing_by_user(user_id).await {
+        Ok(challenge) => challenge,
+        Err(_) => {
+            event.reply("你似乎没有正在进行的决斗");
+            return;
+        }
+    };
+
+    let mut user1 = sql::duel::user::get_user(challenge.user1).await.unwrap();
+    let mut user2 = sql::duel::user::get_user(challenge.user2).await.unwrap();
+
+    match challenge.give_up(event.user_id).await {
+        Ok(_) => {
+            let (winner, loser) = match challenge.result {
+                Some(0) => (challenge.user1, challenge.user2),
+                Some(1) => {
+                    std::mem::swap(&mut user1, &mut user2);
+                    (challenge.user2, challenge.user1)
+                }
+                _ => {
+                    event.reply("未知错误");
+                    return;
+                }
+            };
+
+            let winner = sql::duel::user::get_user(winner).await.unwrap();
+            let winner_id = winner.cf_id.unwrap();
+
+            let loser = sql::duel::user::get_user(loser).await.unwrap();
+
+            let result = format!(
+                "比赛结束，{winner_id} 取得了胜利。\nrating 变化: \n{}: {} + {} = {}\n{}: {} - {} = {}",
+                user1.cf_id.unwrap(),
+                user1.rating,
+                winner.rating - user1.rating,
+                winner.rating,
+                user2.cf_id.unwrap(),
+                user2.rating,
+                loser.rating - user2.rating,
+                loser.rating
+            );
+            event.reply(result);
+            let _ = super::challenge::remove_challenge(challenge.user1, challenge.user2).await;
+        }
+        Err(e) => {
+            event.reply(e.to_string());
+        }
+    }
+}
 
 pub async fn daily_finish(event: &MsgEvent) {
     let user_id = event.user_id;
@@ -28,7 +81,7 @@ pub async fn daily_finish(event: &MsgEvent) {
         }
     };
 
-    let now = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let now = today_utc().format("%Y-%m-%d").to_string();
 
     if user.last_daily == now {
         event.reply("你今天已经完成了每日任务");
@@ -50,6 +103,8 @@ pub async fn daily_finish(event: &MsgEvent) {
             return;
         }
     };
+
+    debug!("Submission: {:#?}", submission);
 
     let contest_id = problem.get("contestId").and_then(|v| v.as_i64());
     let index = problem.get("index").and_then(|v| v.as_str());
@@ -90,6 +145,59 @@ pub async fn daily_problem(event: &MsgEvent) {
     event.reply(problem);
 }
 
+pub async fn judge(event: &MsgEvent) {
+    let user_id = event.user_id;
+
+    let mut challenge = match sql::duel::challenge::get_chall_ongoing_by_user(user_id).await {
+        Ok(challenge) => challenge,
+        Err(_) => {
+            event.reply("你似乎没有正在进行的决斗");
+            return;
+        }
+    };
+
+    let mut user1 = sql::duel::user::get_user(challenge.user1).await.unwrap();
+    let mut user2 = sql::duel::user::get_user(challenge.user2).await.unwrap();
+
+    match challenge.judge().await {
+        Ok(_) => {
+            let (winner, loser) = match challenge.result {
+                Some(0) => (challenge.user1, challenge.user2),
+                Some(1) => {
+                    std::mem::swap(&mut user1, &mut user2);
+                    (challenge.user2, challenge.user1)
+                }
+                _ => {
+                    event.reply("未知错误");
+                    return;
+                }
+            };
+
+            let winner = sql::duel::user::get_user(winner).await.unwrap();
+            let winner_id = winner.cf_id.unwrap();
+
+            let loser = sql::duel::user::get_user(loser).await.unwrap();
+
+            let result = format!(
+                "比赛结束，{winner_id} 取得了胜利。\nrating 变化: \n{}: {} + {} = {}\n{}: {} - {} = {}",
+                user1.cf_id.unwrap(),
+                user1.rating,
+                winner.rating - user1.rating,
+                winner.rating,
+                user2.cf_id.unwrap(),
+                user2.rating,
+                loser.rating - user2.rating,
+                loser.rating
+            );
+            event.reply(result);
+            let _ = super::challenge::remove_challenge(challenge.user1, challenge.user2).await;
+        }
+        Err(e) => {
+            event.reply(e.to_string());
+        }
+    }
+}
+
 pub async fn change(event: &MsgEvent) {
     let user_id = event.user_id;
 
@@ -97,11 +205,32 @@ pub async fn change(event: &MsgEvent) {
         Some(mut challenge) => {
             if challenge.started == 0 {
                 event.reply("你还没有开始决斗");
+            } else if challenge.changed == Some(user_id) {
+                event.reply("你已经发起了换题请求，请等待对手确认");
             } else {
-                let _ = challenge.change().await.map_err(|e| {
-                    event.reply(e.to_string());
-                });
+                let problem = match challenge.change().await {
+                    Ok(problem) => problem,
+                    Err(e) => {
+                        event.reply(e.to_string());
+                        return;
+                    }
+                };
+                challenge.changed = None;
+
+                let problem = format!(
+                    "题目链接：https://codeforces.com/problemset/problem/{}/{}",
+                    problem.contest_id, problem.index
+                );
+
+                event.reply(problem);
+
+                sql::duel::challenge::change_problem(&challenge)
+                    .await
+                    .unwrap();
+                return;
             }
+
+            super::challenge::add_challenge(challenge).await;
         }
         None => {
             let challenge = match sql::duel::challenge::get_chall_ongoing_by_user(user_id).await {
@@ -242,7 +371,7 @@ pub async fn challenge(event: &MsgEvent, args: &[String]) {
     } else {
         Vec::new()
     };
-    let time = chrono::Utc::now();
+    let time = today_utc();
 
     let challenge = Challenge::new(user1, user2, time, tags, rating, None, None, 0);
 

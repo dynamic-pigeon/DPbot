@@ -2,58 +2,21 @@ use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
 
 use anyhow::{Error, Result};
-use kovi::log::{error, info};
-use kovi::serde_json::{self, Value};
+use kovi::log::{debug, info};
+use kovi::serde_json::Value;
 use kovi::tokio::sync::{Mutex, RwLock};
 use rand::seq::{IteratorRandom, SliceRandom};
 
-type ProblemSet = Arc<Vec<Arc<Problem>>>;
+use crate::duel::config::MAX_DAILY_RATING;
+
+use super::config::TAGS;
+
+type ProblemSet = Vec<Arc<Problem>>;
 
 const URL: &str = "https://codeforces.com/api/problemset.problems";
-static PROBLEMS: LazyLock<RwLock<Option<ProblemSet>>> = LazyLock::new(|| RwLock::new(None));
+static PROBLEMS: LazyLock<RwLock<Option<Arc<ProblemSet>>>> = LazyLock::new(|| RwLock::new(None));
 
 static DAILY_LOC: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-const MAX_DAILY_RATING: i64 = 2500;
-const TAGS: &[&str] = &[
-    "binary search",
-    "bitmasks",
-    "brute force",
-    "chinese remainder theorem",
-    "combinatorics",
-    "constructive algorithms",
-    "data structures",
-    "dfs and similar",
-    "divide and conquer",
-    "dp",
-    "dsu",
-    "expression parsing",
-    "fft",
-    "flows",
-    "games",
-    "geometry",
-    "graph matchings",
-    "graphs",
-    "greedy",
-    "hashing",
-    "implementation",
-    "interactive",
-    "math",
-    "matrices",
-    "meet-in-the-middle",
-    "number theory",
-    "probabilities",
-    "schedules",
-    "shortest paths",
-    "sortings",
-    "string suffix structures",
-    "strings",
-    "ternary search",
-    "trees",
-    "two pointers",
-    "*special problem",
-    "not-seen",
-    "new",
-];
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Problem {
@@ -248,7 +211,7 @@ pub async fn get_last_submission(cf_id: &str) -> Option<Value> {
     submission
 }
 
-async fn fetch_problems() -> Result<Vec<Arc<Problem>>, Error> {
+async fn fetch_problems() -> Result<ProblemSet, Error> {
     let res = reqwest::get(URL).await?;
     let body = res.json::<Value>().await?;
     let status = body["status"].as_str().unwrap();
@@ -268,7 +231,7 @@ async fn fetch_problems() -> Result<Vec<Arc<Problem>>, Error> {
     Ok(problems)
 }
 
-pub async fn get_problems() -> Result<ProblemSet, Error> {
+pub async fn get_problems() -> Result<Arc<ProblemSet>, Error> {
     let problems = PROBLEMS.read().await;
     if let Some(problems) = &*problems {
         return Ok(problems.clone());
@@ -288,7 +251,6 @@ pub async fn random_problem() -> Result<Arc<Problem>, Error> {
 
 pub async fn get_daily_problem() -> Result<Arc<Problem>, Error> {
     let _lock = DAILY_LOC.lock().await;
-    error!("get_daily_problem");
     match crate::sql::duel::problem::get_daily_problem().await {
         Ok(problem) => Ok(Arc::new(problem)),
         Err(_) => {

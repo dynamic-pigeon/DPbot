@@ -1,10 +1,10 @@
 use std::sync::LazyLock;
 
 use anyhow::Result;
-use kovi::tokio::sync::RwLock;
-use kovi::{chrono, serde_json};
-
-use crate::duel::user::User;
+use kovi::{
+    log::{debug, info},
+    tokio::sync::RwLock,
+};
 
 pub(crate) mod duel;
 
@@ -54,21 +54,35 @@ pub async fn connect(path: &str) -> Result<()> {
         .max_connections(1)
         .connect(path)
         .await?;
+
+    debug!("数据库连接成功: {}", path);
     POOL.write().await.replace(pool);
     Ok(())
 }
 
+// 事务 commit 和 rollback
 async fn with_commit<F, T>(f: F) -> Result<T>
 where
-    F: AsyncFnOnce(&sqlx::SqlitePool) -> Result<T>,
+    F: for<'c> AsyncFnOnce(&'c mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<T>,
 {
     let sql = POOL.read().await;
     let sql = sql.as_ref().unwrap();
 
-    let trans = sql.begin().await?;
+    debug!("开始事务");
 
-    let ret = f(sql).await?;
+    let mut trans = sql.begin().await?;
+
+    let ret = match f(&mut trans).await {
+        Ok(ret) => ret,
+        Err(e) => {
+            trans.rollback().await?;
+            debug!("事务回滚");
+            return Err(e);
+        }
+    };
 
     trans.commit().await?;
+
+    debug!("结束事务");
     Ok(ret)
 }

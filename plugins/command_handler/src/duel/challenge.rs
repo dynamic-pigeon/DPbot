@@ -1,8 +1,8 @@
-use std::result;
 use std::sync::{Arc, LazyLock};
 
 use anyhow::{Ok, Result};
 use kovi::chrono::{self, DateTime};
+use kovi::log::debug;
 use kovi::tokio::sync::RwLock;
 use rand::seq::SliceRandom;
 
@@ -12,10 +12,6 @@ use crate::sql;
 use super::problem::{Problem, get_last_submission};
 
 static CHALLENGES: LazyLock<RwLock<Vec<Challenge>>> = LazyLock::new(|| RwLock::new(Vec::new()));
-
-// 在（国际象棋等的）大师级比赛中，ELO Rating 的 K 值一般是 16 或 32
-// 但是参加 duel 的都是我们代码部队的国际伟大大师或者传奇伟大大师，所以将 K 设为 128
-const ELO_K: f64 = 128.0;
 
 pub async fn add_challenge(challenge: Challenge) {
     let mut challenges = CHALLENGES.write().await;
@@ -75,6 +71,7 @@ pub struct Challenge {
     pub problem: Option<Problem>,
     pub result: Option<i64>,
     pub started: i64,
+    pub changed: Option<i64>,
 }
 
 impl Challenge {
@@ -97,6 +94,7 @@ impl Challenge {
             problem,
             result,
             started,
+            changed: None,
         }
     }
 
@@ -109,6 +107,33 @@ impl Challenge {
         self.started = 1;
         sql::duel::challenge::add_challenge(self).await?;
         Ok(Arc::clone(problem))
+    }
+
+    pub async fn give_up(&mut self, user_id: i64) -> Result<()> {
+        if user_id == self.user1 {
+            self.result = Some(1);
+        } else if user_id == self.user2 {
+            self.result = Some(0);
+        } else {
+            return Err(anyhow::anyhow!("你不是这场对局的参与者"));
+        }
+
+        let mut user1 = sql::duel::user::get_user(self.user1).await?;
+        let mut user2 = sql::duel::user::get_user(self.user2).await?;
+
+        let user1_rating = user1.rating;
+        let user2_rating = user2.rating;
+
+        let (new_user1_rating, new_user2_rating) =
+            calculate_elo_rating(user1_rating, user2_rating, self.result.unwrap() == 0);
+
+        user1.rating = new_user1_rating;
+        user2.rating = new_user2_rating;
+
+        sql::duel::user::update_tow_user(&user1, &user2).await?;
+        sql::duel::challenge::change_result(self).await?;
+
+        Ok(())
     }
 
     pub async fn judge(&mut self) -> Result<()> {
@@ -124,10 +149,11 @@ impl Challenge {
             .ok_or(anyhow::anyhow!("获取提交记录失败"))?;
 
         let score = |submission: kovi::serde_json::Value| {
+            debug!("Submission: {:#?}", submission);
             let problem = submission
                 .get("problem")
                 .and_then(crate::duel::problem::Problem::from_value)
-                .ok_or(anyhow::anyhow!("获取题目信息失败"))?;
+                .unwrap_or_else(|| Problem::new(0, "".to_string(), 0, vec![]));
 
             if problem.contest_id != self.problem.as_ref().unwrap().contest_id
                 || problem.index != self.problem.as_ref().unwrap().index
@@ -166,12 +192,12 @@ impl Challenge {
             calculate_elo_rating(user1_rating, user2_rating, result);
 
         let mut user1 = user1;
-        user1.rating = new_user1_rating;
-        sql::duel::user::update_user(&user1).await?;
-
         let mut user2 = user2;
+
+        user1.rating = new_user1_rating;
         user2.rating = new_user2_rating;
-        sql::duel::user::update_user(&user2).await?;
+
+        sql::duel::user::update_tow_user(&user1, &user2).await?;
 
         Ok(())
     }
@@ -189,7 +215,7 @@ impl Challenge {
 
 // 计算 ELO Rating 的函数
 fn calculate_elo_rating(rating1: i64, rating2: i64, result: bool) -> (i64, i64) {
-    let k = ELO_K;
+    let k = super::config::ELO_K;
     let r1 = rating1 as f64;
     let r2 = rating2 as f64;
 
@@ -202,5 +228,16 @@ fn calculate_elo_rating(rating1: i64, rating2: i64, result: bool) -> (i64, i64) 
     let new_rating1 = r1 + k * (s1 - e1);
     let new_rating2 = r2 + k * (s2 - e2);
 
-    (new_rating1.round() as i64, new_rating2.round() as i64)
+    // 调整 K 值以确保总分不变
+    let total_rating_before = r1 + r2;
+    let total_rating_after = new_rating1 + new_rating2;
+    let adjustment = (total_rating_before - total_rating_after) / 2.0;
+
+    let adjusted_new_rating1 = new_rating1 + adjustment;
+    let adjusted_new_rating2 = new_rating2 + adjustment;
+
+    (
+        adjusted_new_rating1.round() as i64,
+        adjusted_new_rating2.round() as i64,
+    )
 }

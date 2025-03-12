@@ -1,0 +1,46 @@
+// 在（国际象棋等的）大师级比赛中，ELO Rating 的 K 值一般是 16 或 32
+// 但是参加 duel 的都是我们代码部队的国际伟大大师或者传奇伟大大师，所以将 K 设为 128
+pub const ELO_K: f64 = 128.0;
+// 最大每日一题难度
+pub const MAX_DAILY_RATING: i64 = 2500;
+
+pub const TAGS: &[&str] = &[
+    "binary search",
+    "bitmasks",
+    "brute force",
+    "chinese remainder theorem",
+    "combinatorics",
+    "constructive algorithms",
+    "data structures",
+    "dfs and similar",
+    "divide and conquer",
+    "dp",
+    "dsu",
+    "expression parsing",
+    "fft",
+    "flows",
+    "games",
+    "geometry",
+    "graph matchings",
+    "graphs",
+    "greedy",
+    "hashing",
+    "implementation",
+    "interactive",
+    "math",
+    "matrices",
+    "meet-in-the-middle",
+    "number theory",
+    "probabilities",
+    "schedules",
+    "shortest paths",
+    "sortings",
+    "string suffix structures",
+    "strings",
+    "ternary search",
+    "trees",
+    "two pointers",
+    "*special problem",
+    "not-seen",
+    "new",
+];

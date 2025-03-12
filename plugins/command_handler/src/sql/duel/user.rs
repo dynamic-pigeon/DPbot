@@ -1,7 +1,5 @@
-use kovi::{chrono, serde_json};
-
 use crate::{
-    duel::{challenge::Challenge, user::User},
+    duel::user::User,
     sql::{POOL, with_commit},
 };
 use anyhow::{Ok, Result};
@@ -23,7 +21,7 @@ pub async fn get_user(qq: i64) -> Result<User> {
 }
 
 pub async fn update_user(user: &User) -> Result<()> {
-    with_commit(async |sql| {
+    with_commit(async |trans| {
         let _ = sqlx::query(
             r#"
             UPDATE user SET rating = ?, cf_id = ?, daily_score = ? WHERE qq = ?
@@ -33,7 +31,38 @@ pub async fn update_user(user: &User) -> Result<()> {
         .bind(&user.cf_id)
         .bind(user.daily_score)
         .bind(user.qq)
-        .execute(sql)
+        .execute(&mut **trans)
+        .await?;
+
+        Ok(())
+    })
+    .await
+}
+
+pub async fn update_tow_user(user1: &User, user2: &User) -> Result<()> {
+    with_commit(async |trans| {
+        let _ = sqlx::query(
+            r#"
+            UPDATE user SET rating = ?, cf_id = ?, daily_score = ? WHERE qq = ?
+            "#,
+        )
+        .bind(user1.rating)
+        .bind(&user1.cf_id)
+        .bind(user1.daily_score)
+        .bind(user1.qq)
+        .execute(&mut **trans)
+        .await?;
+
+        let _ = sqlx::query(
+            r#"
+            UPDATE user SET rating = ?, cf_id = ?, daily_score = ? WHERE qq = ?
+            "#,
+        )
+        .bind(user2.rating)
+        .bind(&user2.cf_id)
+        .bind(user2.daily_score)
+        .bind(user2.qq)
+        .execute(&mut **trans)
         .await?;
 
         Ok(())
@@ -42,16 +71,17 @@ pub async fn update_user(user: &User) -> Result<()> {
 }
 
 pub async fn add_user(qq: i64) -> Result<User> {
-    with_commit(async |sql| {
+    with_commit(async |trans| {
         let _ = sqlx::query(
             r#"
             INSERT INTO user (qq, rating, cf_id, daily_score, last_daily) VALUES (?, 1500, NULL, 0, "")
             "#,
         )
         .bind(qq)
-        .execute(sql)
+        .execute(&mut **trans)
         .await?;
 
         Ok(User::new(qq, 1500, None, 0, "".to_string()))
-    }).await
+    })
+    .await
 }

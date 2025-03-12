@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use duel::handlers;
-use kovi::log::{debug, info};
+use kovi::chrono::Utc;
 use kovi::serde_json::{self, Value};
-use kovi::{Message, MsgEvent, PluginBuilder as plugin, tokio};
+use kovi::{Message, MsgEvent, PluginBuilder as plugin, chrono, tokio};
 
 pub(crate) mod duel;
 pub(crate) mod sql;
@@ -17,23 +17,24 @@ async fn main() {
     let sql_path = data_path.join("data.db");
     sql::init(sql_path.to_str().unwrap()).await.unwrap();
 
+    duel::init().await;
+
     let command_path = data_path.join("command.json");
 
-    kovi::spawn(async move {
-        // 初始化题库
-        duel::problem::get_problems().await.unwrap();
-    });
+    let command: Value =
+        serde_json::from_reader(std::fs::File::open(&command_path).unwrap()).unwrap();
+
+    let command = Arc::new(command);
 
     plugin::on_msg(move |e| {
-        let command: Value =
-            serde_json::from_reader(std::fs::File::open(&command_path).unwrap()).unwrap();
+        let command = command.clone();
         async move {
-            handle(e, command).await;
+            handle(e, &command).await;
         }
     });
 }
 
-async fn handle(event: Arc<MsgEvent>, command: Value) {
+async fn handle(event: Arc<MsgEvent>, command: &Value) {
     let text = mes_to_text(&event.message);
 
     let text = text.trim();
@@ -51,7 +52,7 @@ async fn handle(event: Arc<MsgEvent>, command: Value) {
     let (cmd, changed) = match change(&mut args, &command) {
         Ok((cmd, changed)) => (cmd, changed),
         Err(e) => {
-            event.reply(e.to_string());
+            // event.reply(e.to_string());
             return;
         }
     };
@@ -59,7 +60,7 @@ async fn handle(event: Arc<MsgEvent>, command: Value) {
     if changed {
         let new_text = format!("指令被解析为 /{}", args.join(" "));
         event.reply(new_text);
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
     }
 
     match cmd.as_str() {
@@ -90,11 +91,17 @@ async fn handle(event: Arc<MsgEvent>, command: Value) {
         "change" => {
             handlers::change(&event).await;
         }
+        "judge" => {
+            handlers::judge(&event).await;
+        }
+        "give_up" => {
+            handlers::give_up(&event).await;
+        }
         "daily_finish" => {
             handlers::daily_finish(&event).await;
         }
         _ => {
-            // do nothing
+            event.reply("还没写好");
         }
     }
 }
@@ -113,6 +120,11 @@ fn mes_to_text(msg: &Message) -> String {
         }
     }
     text
+}
+
+fn today_utc() -> chrono::DateTime<Utc> {
+    let offset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
+    chrono::Utc::now().with_timezone(&offset).to_utc()
 }
 
 // 解析指令并替换
@@ -139,13 +151,13 @@ fn change(args: &mut Vec<String>, command: &Value) -> Result<(String, bool)> {
         let mut best_match = 0.0;
         let mut flag = false;
         for (k, _) in map {
-            let diff = strsim::normalized_damerau_levenshtein(&k, &args[i]);
+            let diff = strsim::normalized_levenshtein(&k, &args[i]);
             if diff > 0.6 && diff > best_match {
                 key = Some(k);
                 best_match = diff;
                 flag = true;
             }
-            if diff == 1.0 {
+            if (diff - 1.0).abs() < 1e-6 {
                 flag = false;
                 break;
             }

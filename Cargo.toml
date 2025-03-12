@@ -8,9 +8,10 @@ command_handler = { version = "0.1.0", path = "plugins/command_handler" }
 kovi = "0.11.8"
 env_logger = "0.11.0"
 manager = { version = "0.1.0", path = "plugins/manager" }
+contest = { version = "0.1.0", path = "plugins/contest" }
 
 [workspace]
-members = ["plugins/command_handler", "plugins/manager"]
+members = ["plugins/command_handler", "plugins/contest", "plugins/manager"]
 
 [workspace.dependencies]
 kovi = "0.11.8"

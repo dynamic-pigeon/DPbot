@@ -187,6 +187,7 @@ name = "bot"
 version = "0.1.0"
 dependencies = [
  "command_handler",
+ "contest",
  "env_logger",
  "kovi",
  "manager",
@@ -285,6 +286,16 @@ name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
+
+[[package]]
+name = "contest"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kovi",
+ "reqwest",
+ "serde",
+]
 
 [[package]]
 name = "core-foundation"
