@@ -9,6 +9,88 @@ use crate::{sql, today_utc};
 
 use super::challenge::Challenge;
 
+pub async fn daily_ranklist(event: &MsgEvent) {
+    let ranklist = match sql::duel::user::get_top_20_daily().await {
+        Ok(ranklist) => ranklist,
+        Err(e) => {
+            event.reply(e.to_string());
+            return;
+        }
+    };
+
+    let mut result = "每日任务排行榜：(只显示前20)\n".to_string();
+    for (i, user) in ranklist.iter().enumerate() {
+        result.push_str(&format!(
+            "{}. {} rating: {} score: {}\n",
+            i + 1,
+            user.cf_id.as_ref().unwrap(),
+            user.rating,
+            user.daily_score
+        ));
+    }
+
+    event.reply(result);
+}
+
+pub async fn ranklist(event: &MsgEvent) {
+    let ranklist = match sql::duel::user::get_top_20_ranklist().await {
+        Ok(ranklist) => ranklist,
+        Err(e) => {
+            event.reply(e.to_string());
+            return;
+        }
+    };
+
+    let mut result = "排行榜：(只显示前20)\n".to_string();
+    for (i, user) in ranklist.iter().enumerate() {
+        result.push_str(&format!(
+            "{}. {} rating: {} score: {}\n",
+            i + 1,
+            user.cf_id.as_ref().unwrap(),
+            user.rating,
+            user.daily_score
+        ));
+    }
+
+    event.reply(result);
+}
+
+pub async fn ongoing(event: &MsgEvent) {
+    let challenge = match sql::duel::challenge::get_ongoing_challenges().await {
+        Ok(challenge) => challenge,
+        Err(_) => {
+            event.reply("未知错误");
+            return;
+        }
+    };
+
+    let mut result = "正在进行的决斗：\n".to_string();
+
+    for challenge in challenge.iter() {
+        let user1 = sql::duel::user::get_user(challenge.user1).await.unwrap();
+        let user2 = sql::duel::user::get_user(challenge.user2).await.unwrap();
+
+        let user1 = user1.cf_id.unwrap();
+        let user2 = user2.cf_id.unwrap();
+
+        let problem = challenge.problem.as_ref().unwrap();
+        let duration = today_utc().signed_duration_since(challenge.time);
+
+        let duration = format!(
+            "{}d {}h {}m {}s",
+            duration.num_days(),
+            duration.num_hours() % 24,
+            duration.num_minutes() % 60,
+            duration.num_seconds() % 60
+        );
+
+        result.push_str(&format!(
+            "{} vs {} problem: {}{}, last for {}\n",
+            user1, user2, problem.contest_id, problem.index, duration
+        ));
+    }
+}
+
 pub async fn give_up(event: &MsgEvent) {
     let user_id = event.user_id;
 

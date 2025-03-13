@@ -130,7 +130,7 @@ impl Challenge {
         user1.rating = new_user1_rating;
         user2.rating = new_user2_rating;
 
-        sql::duel::user::update_tow_user(&user1, &user2).await?;
+        sql::duel::user::update_two_user(&user1, &user2).await?;
         sql::duel::challenge::change_result(self).await?;
 
         Ok(())
@@ -197,7 +197,7 @@ impl Challenge {
         user1.rating = new_user1_rating;
         user2.rating = new_user2_rating;
 
-        sql::duel::user::update_tow_user(&user1, &user2).await?;
+        sql::duel::user::update_two_user(&user1, &user2).await?;
 
         Ok(())
     }

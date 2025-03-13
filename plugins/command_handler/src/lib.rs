@@ -100,6 +100,15 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
         "daily_finish" => {
             handlers::daily_finish(&event).await;
         }
+        "daily_ranklist" => {
+            handlers::daily_ranklist(&event).await;
+        }
+        "ranklist" => {
+            handlers::ranklist(&event).await;
+        }
+        "ongoing" => {
+            handlers::ongoing(&event).await;
+        }
         _ => {
             event.reply("还没写好");
         }

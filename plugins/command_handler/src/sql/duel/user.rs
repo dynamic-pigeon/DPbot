@@ -39,7 +39,7 @@ pub async fn update_user(user: &User) -> Result<()> {
     .await
 }
 
-pub async fn update_tow_user(user1: &User, user2: &User) -> Result<()> {
+pub async fn update_two_user(user1: &User, user2: &User) -> Result<()> {
     with_commit(async |trans| {
         let _ = sqlx::query(
             r#"
@@ -84,4 +84,44 @@ pub async fn add_user(qq: i64) -> Result<User> {
         Ok(User::new(qq, 1500, None, 0, "".to_string()))
     })
     .await
+}
+
+pub async fn get_top_20_daily() -> Result<Vec<User>> {
+    let sql = POOL.read().await;
+    let sql = sql.as_ref().unwrap();
+
+    let res: Vec<(i64, i64, Option<String>, i64, String)> = sqlx::query_as(
+        r#"
+        SELECT * FROM user ORDER BY daily_rating DESC LIMIT 20
+        "#,
+    )
+    .fetch_all(sql)
+    .await?;
+
+    Ok(res
+        .into_iter()
+        .map(|(qq, rating, cf_id, daily_score, last_daily)| {
+            User::new(qq, rating, cf_id, daily_score, last_daily)
+        })
+        .collect())
+}
+
+pub async fn get_top_20_ranklist() -> Result<Vec<User>> {
+    let sql = POOL.read().await;
+    let sql = sql.as_ref().unwrap();
+
+    let res: Vec<(i64, i64, Option<String>, i64, String)> = sqlx::query_as(
+        r#"
+        SELECT * FROM user ORDER BY rating DESC LIMIT 20
+        "#,
+    )
+    .fetch_all(sql)
+    .await?;
+
+    Ok(res
+        .into_iter()
+        .map(|(qq, rating, cf_id, daily_score, last_daily)| {
+            User::new(qq, rating, cf_id, daily_score, last_daily)
+        })
+        .collect())
 }
