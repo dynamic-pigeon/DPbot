@@ -92,7 +92,7 @@ pub async fn get_top_20_daily() -> Result<Vec<User>> {
 
     let res: Vec<(i64, i64, Option<String>, i64, String)> = sqlx::query_as(
         r#"
-        SELECT * FROM user ORDER BY daily_rating DESC LIMIT 20
+        SELECT * FROM user ORDER BY daily_score DESC LIMIT 20
         "#,
     )
     .fetch_all(sql)

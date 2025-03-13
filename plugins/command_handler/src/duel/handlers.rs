@@ -44,11 +44,10 @@ pub async fn ranklist(event: &MsgEvent) {
     let mut result = "排行榜：(只显示前20)\n".to_string();
     for (i, user) in ranklist.iter().enumerate() {
         result.push_str(&format!(
-            "{}. {} rating: {} score: {}\n",
+            "{}. {} rating: {}\n",
             i + 1,
             user.cf_id.as_ref().unwrap(),
             user.rating,
-            user.daily_score
         ));
     }
 
