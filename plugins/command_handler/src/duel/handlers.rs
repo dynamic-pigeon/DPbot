@@ -1,8 +1,4 @@
-use kovi::{
-    MsgEvent,
-    chrono::{self},
-    log::debug,
-};
+use kovi::{MsgEvent, bot::message::Segment, log::debug, serde_json::json};
 use rand::seq::SliceRandom;
 
 use crate::{sql, today_utc};
@@ -87,6 +83,24 @@ pub async fn ongoing(event: &MsgEvent) {
             user1, user2, problem.contest_id, problem.index, duration
         ));
     }
+
+    let seg = Segment::new(
+        "node",
+        json!({
+            "user_id": event.self_id,
+            "nickname": "呵呵哒",
+            "content": [{
+                "type": "text",
+                "data": {
+                    "text": result
+                }
+            }]
+        }),
+    );
+
+    let msg = kovi::Message::from(vec![seg]);
+
+    event.reply(msg);
 }
 
 pub async fn give_up(event: &MsgEvent) {

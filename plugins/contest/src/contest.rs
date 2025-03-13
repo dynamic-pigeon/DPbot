@@ -9,7 +9,7 @@ use std::{
 use anyhow::Result;
 use kovi::{
     chrono::{self, DateTime, Datelike, FixedOffset, Timelike, Utc, format},
-    log::info,
+    log::{error, info},
     tokio::sync::RwLock,
 };
 use serde::Deserialize;
@@ -66,10 +66,18 @@ pub async fn get_all_contests() -> ContestSet {
 }
 
 pub async fn init() -> Result<usize> {
-    let _ = update_contests().await;
+    match update_contests().await {
+        Ok(_) => {
+            info!("Contest 加载完成");
+        }
+        Err(e) => {
+            error!("Contest 加载失败: {:?}", e);
+            return Err(e);
+        }
+    };
     let contests = CONTESTS.read().await.clone();
     let now = today_utc();
-    let mut map: HashMap<DateTime<Utc>, Vec<Arc<Contest>>> = HashMap::new();
+    let mut map: HashMap<_, Vec<Arc<Contest>>> = HashMap::new();
 
     for contest in contests.iter().cloned() {
         let start =
@@ -148,6 +156,7 @@ pub(crate) async fn update_contests() -> Result<()> {
     let mut contests = super::getter::fetch_contest().await?;
     contests.sort_by_key(|contest| contest.start.clone());
     *CONTESTS.write().await = Arc::new(contests);
+
     Ok(())
 }
 

@@ -14,7 +14,7 @@ pub(crate) mod contest;
 pub(crate) mod getter;
 
 static CONFIG: LazyLock<RwLock<Arc<Config>>> =
-    LazyLock::new(|| RwLock::new(Arc::new(Config::empty())));
+    LazyLock::new(|| RwLock::new(Arc::new(Default::default())));
 
 static BOT: LazyLock<RwLock<Option<Arc<RuntimeBot>>>> = LazyLock::new(|| RwLock::new(None));
 
@@ -25,7 +25,7 @@ async fn main() {
     let data_path = bot.get_data_path();
 
     let config_path = data_path.join("config.json");
-    let config = load_json_data(Config::empty(), config_path).unwrap();
+    let config = load_json_data(Default::default(), config_path).unwrap();
     *CONFIG.write().await = Arc::new(config);
 
     plugin::cron("0 0 * * *", || async {
@@ -35,7 +35,6 @@ async fn main() {
 
     let _ = contest::init().await;
 
-    info!("contest load sucessfully.");
     plugin::on_msg(|event| async move {
         let Some(text) = event.borrow_text() else {
             return;
@@ -86,8 +85,8 @@ pub struct Config {
     pub username: String,
 }
 
-impl Config {
-    pub fn empty() -> Self {
+impl Default for Config {
+    fn default() -> Self {
         Self {
             notify_group: vec![],
             notify_time: vec![],

@@ -6,6 +6,7 @@ use kovi::chrono::Utc;
 use kovi::serde_json::{self, Value};
 use kovi::{Message, MsgEvent, PluginBuilder as plugin, chrono, tokio};
 
+pub(crate) mod codeforces;
 pub(crate) mod duel;
 pub(crate) mod sql;
 
@@ -51,7 +52,7 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
 
     let (cmd, changed) = match change(&mut args, &command) {
         Ok((cmd, changed)) => (cmd, changed),
-        Err(e) => {
+        Err(_e) => {
             // event.reply(e.to_string());
             return;
         }

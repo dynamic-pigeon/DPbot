@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
 
 use anyhow::{Error, Result};
-use kovi::log::{debug, info};
+use kovi::log::info;
 use kovi::serde_json::Value;
 use kovi::tokio::sync::{Mutex, RwLock};
 use rand::seq::{IteratorRandom, SliceRandom};
@@ -212,15 +212,25 @@ pub async fn get_last_submission(cf_id: &str) -> Option<Value> {
 }
 
 async fn fetch_problems() -> Result<ProblemSet, Error> {
-    let res = reqwest::get(URL).await?;
+    let client = reqwest::Client::new();
+    let mut header = reqwest::header::HeaderMap::new();
+    header.insert(
+        reqwest::header::USER_AGENT,
+        reqwest::header::HeaderValue::from_static("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"),
+    );
+    let res = client.get(URL).headers(header).send().await?;
+
     let body = res.json::<Value>().await?;
-    let status = body["status"].as_str().unwrap();
+    let status = body
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     if status != "OK" {
         return Err(anyhow::anyhow!("Failed to fetch problems"));
     };
 
-    let problems = match &body["result"]["problems"] {
-        Value::Array(prblems) => prblems
+    let problems = match &body.get("result").and_then(|v| v.get("problems")) {
+        Some(Value::Array(prblems)) => prblems
             .iter()
             .filter_map(Problem::from_value)
             .map(Arc::new)
@@ -243,6 +253,7 @@ pub async fn get_problems() -> Result<Arc<ProblemSet>, Error> {
     Ok(problems)
 }
 
+#[allow(dead_code)]
 pub async fn random_problem() -> Result<Arc<Problem>, Error> {
     let problems = get_problems().await?;
     let problem = problems.choose(&mut rand::thread_rng()).unwrap();

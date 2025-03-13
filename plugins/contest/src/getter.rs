@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::{Ok, Result};
-use kovi::serde_json::{self, Value};
+use kovi::{
+    log::info,
+    serde_json::{self, Value},
+};
 
 use crate::{CONFIG, contest::Contest};
 
@@ -19,6 +22,7 @@ pub async fn fetch_contest() -> Result<Vec<Arc<Contest>>> {
             contest_id, config.username, config.api_key
         );
 
+        kovi::tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         let res = reqwest::get(&url).await?;
         let body = res.json::<serde_json::Value>().await?;
 

@@ -1,6 +1,6 @@
 use kovi::{
     PluginBuilder as plugin,
-    log::{debug, error, info},
+    log::{error, info},
 };
 
 pub(crate) mod challenge;
