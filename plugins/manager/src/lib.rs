@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
+use config::Config;
+use kovi::MsgEvent;
 use kovi::bot::runtimebot::kovi_api::SetAccessControlList;
 use kovi::serde_json::Value;
 use kovi::utils::load_json_data;
 use kovi::{Message, PluginBuilder as plugin};
-use kovi::{MsgEvent, serde_json};
+
+mod config;
 
 const PLUGINS: &[&str] = &["command_handler", "manager", "contest"];
 
@@ -13,16 +16,10 @@ async fn main() {
     let bot = plugin::get_runtime_bot();
     let data_path = bot.get_data_path();
     let config_path = data_path.join("config.json");
-    let config: Value =
-        serde_json::from_reader(std::fs::File::open(&config_path).unwrap()).unwrap();
+    let config = load_json_data(Config::empty(), config_path).unwrap();
 
     // Initialize the whitelist
-    let whitelist = config["whitelist"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_i64().unwrap())
-        .collect::<Vec<_>>();
+    let whitelist = &config.whitelist;
 
     for plugin_name in PLUGINS {
         bot.set_plugin_access_control(plugin_name, true).unwrap();

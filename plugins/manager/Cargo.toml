@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 kovi.workspace = true
+serde = { version = "1.0", features = ["derive"] }

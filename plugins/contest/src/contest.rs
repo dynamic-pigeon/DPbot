@@ -48,6 +48,9 @@ impl Contest {
 }
 
 pub async fn get_all_contests() -> ContestSet {
+    if CONTESTS.read().await.is_empty() {
+        init().await.unwrap();
+    }
     let contests = CONTESTS.read().await.clone();
     let now = kovi::chrono::Utc::now();
     contests
@@ -87,6 +90,12 @@ pub async fn init() -> Result<usize> {
     for (time, contests) in map {
         count += contests.len();
         for sub_time in config.notify_time.iter() {
+            info!(
+                "{} contests are going to start in {} minutes.",
+                contests.len(),
+                sub_time
+            );
+
             let mut msg = format!("选手注意，以下比赛还有不到 {} 分钟就要开始了：\n", sub_time);
             for contest in contests.iter().cloned() {
                 let add = format!("\n{}\n{}\n", contest.event, contest.href);
