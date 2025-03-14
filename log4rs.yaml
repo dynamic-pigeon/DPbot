@@ -15,7 +15,7 @@ appenders:
       roller: # rotate 类型
         # 或者用 fixed_window
         kind: fixed_window
-        pattern: "compressed-log-{}-.log" # 注意, 需要至少包含 "{}" 用于插入索引值
+        pattern: "log/compressed-log-{}-.log" # 注意, 需要至少包含 "{}" 用于插入索引值
         base: 0 # 压缩日志索引值起点
         count: 3 # 最大保存压缩文件数
   stdout:

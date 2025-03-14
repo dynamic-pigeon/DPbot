@@ -1,14 +1,11 @@
 use std::{
-    cmp::Reverse,
     collections::HashMap,
-    os::unix::raw::time_t,
     sync::{Arc, LazyLock},
-    time::Duration,
 };
 
 use anyhow::Result;
 use kovi::{
-    chrono::{self, DateTime, Datelike, FixedOffset, Timelike, Utc, format},
+    chrono::{self, Datelike, FixedOffset},
     log::{error, info},
     tokio::sync::RwLock,
 };
@@ -114,7 +111,9 @@ pub async fn init() -> Result<usize> {
             let start = time.with_timezone(&offset).to_utc();
             let now = today_utc();
 
-            let duration = start - now;
+            let notify_time = now - chrono::Duration::minutes(*sub_time);
+
+            let duration = start - notify_time;
             if duration.num_minutes() < 0 {
                 continue;
             }
