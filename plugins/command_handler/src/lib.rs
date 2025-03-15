@@ -124,12 +124,20 @@ fn mes_to_text(msg: &Message) -> String {
                 text.push_str(&seg.data["text"].as_str().unwrap());
             }
             "at" => {
-                text.push_str(seg.data["qq"].as_str().unwrap());
+                text.push_str(&format!("@{}", seg.data["qq"].as_str().unwrap()));
             }
             _ => {}
         }
     }
     text
+}
+
+fn user_id_or_text(text: &str) -> &str {
+    if text.starts_with("@") {
+        &text[1..]
+    } else {
+        text
+    }
 }
 
 fn today_utc() -> chrono::DateTime<Utc> {

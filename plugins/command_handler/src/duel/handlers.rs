@@ -1,7 +1,7 @@
 use kovi::{MsgEvent, bot::message::Segment, log::debug, serde_json::json};
 use rand::seq::SliceRandom;
 
-use crate::{sql, today_utc};
+use crate::{sql, today_utc, user_id_or_text};
 
 use super::challenge::Challenge;
 
@@ -419,7 +419,10 @@ pub async fn accept(event: &MsgEvent) {
 
 pub async fn challenge(event: &MsgEvent, args: &[String]) {
     let user1 = event.user_id;
-    let user2 = match args.get(2).and_then(|s| s.parse::<i64>().ok()) {
+    let user2 = match args
+        .get(2)
+        .and_then(|s| user_id_or_text(&s).parse::<i64>().ok())
+    {
         Some(user2) => user2,
         None => {
             event.reply("参数非法");

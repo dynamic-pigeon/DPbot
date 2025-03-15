@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    f32::consts::E,
     sync::{Arc, LazyLock},
 };
 
@@ -69,7 +70,7 @@ pub async fn init() -> Result<usize> {
         }
         Err(e) => {
             error!("Contest 加载失败: {:?}", e);
-            return Err(e);
+            send_to_super_admin(&format!("Contest 加载失败: {:?}", e)).await;
         }
     };
     let contests = CONTESTS.read().await.clone();
@@ -95,12 +96,6 @@ pub async fn init() -> Result<usize> {
     for (time, contests) in map {
         count += contests.len();
         for sub_time in config.notify_time.iter() {
-            info!(
-                "{} contests are going to start in {} minutes.",
-                contests.len(),
-                sub_time
-            );
-
             let mut msg = format!("选手注意，以下比赛还有不到 {} 分钟就要开始了：\n", sub_time);
             for contest in contests.iter().cloned() {
                 let add = format!("\n{}\n{}\n", contest.event, contest.href);
@@ -111,9 +106,15 @@ pub async fn init() -> Result<usize> {
             let start = time.with_timezone(&offset).to_utc();
             let now = today_utc();
 
-            let notify_time = now - chrono::Duration::minutes(*sub_time);
+            let notify_time = start - chrono::Duration::minutes(*sub_time);
 
-            let duration = start - notify_time;
+            info!(
+                "{} contests are going to start at {}.",
+                contests.len(),
+                notify_time
+            );
+
+            let duration = notify_time - now;
             if duration.num_minutes() < 0 {
                 continue;
             }
@@ -133,7 +134,17 @@ pub async fn init() -> Result<usize> {
 }
 
 pub async fn daily_init() {
-    let count = init().await;
+    let count = (async || {
+        // Retry 3 times
+        for _ in 0..3 {
+            if let Ok(c) = init().await {
+                return Ok(c);
+            }
+        }
+        Err(anyhow::anyhow!("Failed to init contest"))
+    })()
+    .await;
+
     if let Ok(count) = count {
         info!("{} contests are going to start today.", count);
         let bot = crate::BOT.read().await.as_ref().unwrap().clone();
@@ -161,7 +172,16 @@ pub(crate) async fn update_contests() -> Result<()> {
 
 fn seconds_to_str(seconds: i64) -> String {
     let total_minutes = seconds / 60;
-    let hour = total_minutes / 60;
+    let hour = total_minutes / 60 % 24;
     let minute = total_minutes % 60;
-    format!("{:02}:{:02}", hour, minute)
+    let day = total_minutes / 60 / 24;
+    if day > 0 {
+        return format!("{}d {:02}h {:02}min", day, hour, minute);
+    }
+    format!("{:02}h {:02}min", hour, minute)
+}
+
+async fn send_to_super_admin(msg: &str) {
+    let bot = crate::BOT.read().await.as_ref().unwrap().clone();
+    bot.send_private_msg(bot.get_main_admin().unwrap(), msg);
 }
