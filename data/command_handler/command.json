@@ -21,5 +21,9 @@
     "bind": {
         "begin": "bind",
         "finish": "finish_bind"
+    },
+    "cf": {
+        "rating": "rating",
+        "analyze": "analyze"
     }
 }

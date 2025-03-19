@@ -24,13 +24,14 @@ pub async fn update_user(user: &User) -> Result<()> {
     with_commit(async |trans| {
         let _ = sqlx::query(
             r#"
-            UPDATE user SET rating = ?, cf_id = ?, daily_score = ? WHERE qq = ?
+            UPDATE user SET rating = ?, cf_id = ?, daily_score = ?, last_daily = ? WHERE qq = ?
             "#,
         )
         .bind(user.rating)
         .bind(&user.cf_id)
         .bind(user.daily_score)
         .bind(user.qq)
+        .bind(&user.last_daily)
         .execute(&mut **trans)
         .await?;
 

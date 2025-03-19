@@ -1,19 +1,25 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Error, Result};
 use duel::handlers;
 use kovi::chrono::Utc;
 use kovi::serde_json::{self, Value};
 use kovi::{Message, MsgEvent, PluginBuilder as plugin, chrono, tokio};
+use utils::{change, mes_to_text};
 
 pub(crate) mod codeforces;
 pub(crate) mod duel;
 pub(crate) mod sql;
+pub(crate) mod utils;
+
+static PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
 
 #[kovi::plugin]
 async fn main() {
     let bot = plugin::get_runtime_bot();
     let data_path = bot.get_data_path();
+
+    PATH.get_or_init(|| data_path.clone());
 
     let sql_path = data_path.join("data.db");
     sql::init(sql_path.to_str().unwrap()).await.unwrap();
@@ -65,6 +71,12 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
     }
 
     match cmd.as_str() {
+        "analyze" => {
+            codeforces::analyze(&event, &args).await;
+        }
+        "rating" => {
+            codeforces::rating(&event, &args).await;
+        }
         "daily_problem" => {
             handlers::daily_problem(&event).await;
         }
@@ -114,86 +126,4 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
             event.reply("还没写好");
         }
     }
-}
-
-fn mes_to_text(msg: &Message) -> String {
-    let mut text = String::new();
-    for seg in msg.iter() {
-        match seg.type_.as_str() {
-            "text" => {
-                text.push_str(&seg.data["text"].as_str().unwrap());
-            }
-            "at" => {
-                text.push_str(&format!("@{}", seg.data["qq"].as_str().unwrap()));
-            }
-            _ => {}
-        }
-    }
-    text
-}
-
-fn user_id_or_text(text: &str) -> &str {
-    if text.starts_with("@") {
-        &text[1..]
-    } else {
-        text
-    }
-}
-
-fn today_utc() -> chrono::DateTime<Utc> {
-    let offset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
-    chrono::Utc::now().with_timezone(&offset).to_utc()
-}
-
-// 解析指令并替换
-fn change(args: &mut Vec<String>, command: &Value) -> Result<(String, bool)> {
-    let mut changed = false;
-
-    let mut point = command;
-
-    let mut i = 0;
-    let s = loop {
-        let map = match point {
-            Value::String(s) => break s.clone(),
-            Value::Object(obj) => obj,
-            _ => {
-                unreachable!("Invalid command");
-            }
-        };
-
-        if i >= args.len() {
-            return Err(Error::msg("Invalid command"));
-        }
-
-        let mut key = None;
-        let mut best_match = 0.0;
-        let mut flag = false;
-        for (k, _) in map {
-            let diff = strsim::normalized_levenshtein(&k, &args[i]);
-            if diff > 0.6 && diff > best_match {
-                key = Some(k);
-                best_match = diff;
-                flag = true;
-            }
-            if (diff - 1.0).abs() < 1e-6 {
-                flag = false;
-                break;
-            }
-        }
-
-        if key.is_none() {
-            return Err(Error::msg("Invalid command"));
-        }
-
-        if flag {
-            args[i] = key.unwrap().clone();
-            changed = true;
-        }
-
-        point = &map[key.unwrap()];
-
-        i += 1;
-    };
-
-    Ok((s, changed))
 }

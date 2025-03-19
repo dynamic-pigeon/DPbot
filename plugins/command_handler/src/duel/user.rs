@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use crate::{duel::problem::get_last_submission, sql, today_utc};
+use crate::{duel::problem::get_last_submission, sql, utils::today_utc};
 use anyhow::Result;
 use kovi::{chrono, log::info, tokio::sync::RwLock};
 

@@ -48,3 +48,7 @@ loggers:
     level: info
     appenders:
       - stdout
+  kovi:
+    level: info
+    appenders:
+      - stdout

@@ -1,7 +1,10 @@
 use kovi::{MsgEvent, bot::message::Segment, log::debug, serde_json::json};
 use rand::seq::SliceRandom;
 
-use crate::{sql, today_utc, user_id_or_text};
+use crate::{
+    sql,
+    utils::{today_utc, user_id_or_text_str},
+};
 
 use super::challenge::Challenge;
 
@@ -421,7 +424,7 @@ pub async fn challenge(event: &MsgEvent, args: &[String]) {
     let user1 = event.user_id;
     let user2 = match args
         .get(2)
-        .and_then(|s| user_id_or_text(&s).parse::<i64>().ok())
+        .and_then(|s| user_id_or_text_str(&s).parse::<i64>().ok())
     {
         Some(user2) => user2,
         None => {

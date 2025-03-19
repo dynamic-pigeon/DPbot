@@ -4,7 +4,7 @@ use kovi::log::info;
 
 use crate::duel::problem::Problem;
 use crate::sql::with_commit;
-use crate::today_utc;
+use crate::utils::today_utc;
 
 pub async fn set_daily_problem(problem: &Problem) -> Result<()> {
     with_commit(async |trans| {

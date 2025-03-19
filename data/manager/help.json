@@ -10,5 +10,9 @@
         "/duel statics: 查询历史统计",
         "/duel problem rating：随机一道分数为 rating 的题目"
     ],
-    "contest": "/contest，获取最近的比赛信息"
+    "contest": "/contest，获取最近的比赛信息",
+    "cf": [
+        "/cf rating [@p, cf_id]: 查询用户的 CF rating",
+        "/cf analyze [@p, cf_id]: 查询用户的 CF 做题情况"
+    ]
 }

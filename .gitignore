@@ -8,3 +8,4 @@ data/manager/config.json
 kovi.conf.toml
 kovi.plugin.toml
 log
+data/command_handler/codeforces/.venv
