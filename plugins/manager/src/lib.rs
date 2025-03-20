@@ -9,7 +9,7 @@ use kovi::{Message, PluginBuilder as plugin};
 
 mod config;
 
-const PLUGINS: &[&str] = &["command_handler", "manager", "contest"];
+const PLUGINS: &[&str] = &["command_handler", "manager", "contest", "aichat"];
 
 #[kovi::plugin]
 async fn main() {
