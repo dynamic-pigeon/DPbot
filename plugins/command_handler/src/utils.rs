@@ -12,16 +12,16 @@ pub enum UIT<'a> {
 }
 
 pub fn user_id_or_text(text: &str) -> UIT {
-    if text.starts_with("@") {
-        UIT::At(text[1..].parse().unwrap())
+    if let Some(user_id) = text.strip_prefix("@") {
+        UIT::At(user_id.parse().unwrap())
     } else {
         UIT::Text(text)
     }
 }
 
 pub fn user_id_or_text_str(text: &str) -> &str {
-    if text.starts_with("@") {
-        &text[1..]
+    if let Some(user_id) = text.strip_prefix("@") {
+        user_id
     } else {
         text
     }
@@ -32,7 +32,7 @@ pub fn mes_to_text(msg: &Message) -> String {
     for seg in msg.iter() {
         match seg.type_.as_str() {
             "text" => {
-                text.push_str(&seg.data["text"].as_str().unwrap());
+                text.push_str(seg.data["text"].as_str().unwrap());
             }
             "at" => {
                 text.push_str(&format!("@{}", seg.data["qq"].as_str().unwrap()));
@@ -49,7 +49,7 @@ pub fn today_utc() -> chrono::DateTime<Utc> {
 }
 
 // 解析指令并替换
-pub fn change(args: &mut Vec<String>, command: &Value) -> Result<(String, bool)> {
+pub fn change(args: &mut [String], command: &Value) -> Result<(String, bool)> {
     let mut changed = false;
 
     let mut point = command;
@@ -59,9 +59,7 @@ pub fn change(args: &mut Vec<String>, command: &Value) -> Result<(String, bool)>
         let map = match point {
             Value::String(s) => break s.clone(),
             Value::Object(obj) => obj,
-            _ => {
-                unreachable!("Invalid command");
-            }
+            _ => unreachable!("Invalid command"),
         };
 
         if i >= args.len() {
@@ -72,7 +70,7 @@ pub fn change(args: &mut Vec<String>, command: &Value) -> Result<(String, bool)>
         let mut best_match = 0.0;
         let mut flag = false;
         for (k, _) in map {
-            let diff = strsim::normalized_damerau_levenshtein(&k, &args[i]);
+            let diff = strsim::normalized_damerau_levenshtein(k, &args[i]);
             if diff > 0.6 && diff > best_match {
                 key = Some(k);
                 best_match = diff;

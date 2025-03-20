@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 
 use anyhow::Result;
 use kovi::{
@@ -8,16 +8,15 @@ use kovi::{
 
 pub(crate) mod duel;
 
-static POOL: LazyLock<RwLock<Option<sqlx::SqlitePool>>> = LazyLock::new(|| RwLock::new(None));
-static PATH: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| RwLock::new(None));
+static POOL: OnceLock<sqlx::SqlitePool> = OnceLock::new();
+static PATH: OnceLock<String> = OnceLock::new();
 
 /// 初始化数据库
 /// 有且只有一次，在插件启动时调用
 pub async fn init(path: &str) -> Result<()> {
-    PATH.write().await.replace(path.to_string());
+    PATH.get_or_init(|| path.to_string());
     connect(path).await?;
-    let sql = POOL.write().await;
-    let sql = sql.as_ref().unwrap();
+    let sql = POOL.get().unwrap();
 
     sqlx::query(
         r#"
@@ -56,7 +55,7 @@ pub async fn connect(path: &str) -> Result<()> {
         .await?;
 
     debug!("数据库连接成功: {}", path);
-    POOL.write().await.replace(pool);
+    POOL.get_or_init(|| pool);
     Ok(())
 }
 
@@ -65,8 +64,7 @@ async fn with_commit<F, T>(f: F) -> Result<T>
 where
     F: for<'c> AsyncFnOnce(&'c mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<T>,
 {
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
+    let sql = POOL.get().unwrap();
 
     debug!("开始事务");
 

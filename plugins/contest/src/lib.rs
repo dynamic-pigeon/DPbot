@@ -1,4 +1,4 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 use kovi::{
     Message, PluginBuilder as plugin, RuntimeBot,
@@ -13,20 +13,19 @@ use kovi::{
 pub(crate) mod contest;
 pub(crate) mod getter;
 
-static CONFIG: LazyLock<RwLock<Arc<Config>>> =
-    LazyLock::new(|| RwLock::new(Arc::new(Default::default())));
+static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
 
-static BOT: LazyLock<RwLock<Option<Arc<RuntimeBot>>>> = LazyLock::new(|| RwLock::new(None));
+static BOT: OnceLock<Arc<RuntimeBot>> = OnceLock::new();
 
 #[kovi::plugin]
 async fn main() {
     let bot = plugin::get_runtime_bot();
-    BOT.write().await.replace(Arc::clone(&bot));
+    BOT.get_or_init(|| Arc::clone(&bot));
     let data_path = bot.get_data_path();
 
     let config_path = data_path.join("config.json");
     let config = load_json_data(Default::default(), config_path).unwrap();
-    *CONFIG.write().await = Arc::new(config);
+    CONFIG.get_or_init(|| Arc::new(config));
 
     plugin::cron("0 0 * * *", || async {
         contest::daily_init().await;

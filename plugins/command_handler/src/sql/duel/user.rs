@@ -5,8 +5,7 @@ use crate::{
 use anyhow::{Ok, Result};
 
 pub async fn get_user(qq: i64) -> Result<User> {
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
+    let sql = POOL.get().unwrap();
 
     let res: (i64, i64, Option<String>, i64, String) = sqlx::query_as(
         r#"
@@ -88,8 +87,7 @@ pub async fn add_user(qq: i64) -> Result<User> {
 }
 
 pub async fn get_top_20_daily() -> Result<Vec<User>> {
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
+    let sql = POOL.get().unwrap();
 
     let res: Vec<(i64, i64, Option<String>, i64, String)> = sqlx::query_as(
         r#"
@@ -108,8 +106,7 @@ pub async fn get_top_20_daily() -> Result<Vec<User>> {
 }
 
 pub async fn get_top_20_ranklist() -> Result<Vec<User>> {
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
+    let sql = POOL.get().unwrap();
 
     let res: Vec<(i64, i64, Option<String>, i64, String)> = sqlx::query_as(
         r#"

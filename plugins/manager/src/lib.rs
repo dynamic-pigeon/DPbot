@@ -46,7 +46,6 @@ async fn main() {
             let text = event.borrow_text().unwrap_or_default();
             if text.starts_with("/help") {
                 handle_help(&event, &help, &duel_help).await;
-                return;
             }
         }
     });

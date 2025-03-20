@@ -12,7 +12,7 @@ pub async fn fetch_contest() -> Result<Vec<Arc<Contest>>> {
     let mut contests = Vec::new();
 
     let config = {
-        let config = CONFIG.read().await;
+        let config = CONFIG.get().unwrap();
         Arc::clone(&*config)
     };
 

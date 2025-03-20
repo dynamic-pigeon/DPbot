@@ -9,3 +9,5 @@ kovi.conf.toml
 kovi.plugin.toml
 log
 data/command_handler/codeforces/.venv
+data/aichat/config.json
+data/aichat/output.html

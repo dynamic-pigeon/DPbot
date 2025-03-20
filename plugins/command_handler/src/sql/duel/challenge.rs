@@ -7,8 +7,7 @@ use crate::{
 use anyhow::Result;
 
 pub async fn get_ongoing_challenges() -> Result<Vec<Challenge>> {
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
+    let sql = POOL.get().unwrap();
 
     let res: Vec<(i64, i64, String, String, i64, Option<String>, Option<i64>)> = sqlx::query_as(
         r#"
@@ -129,8 +128,7 @@ pub async fn remove_challenge(challenge: &Challenge) -> Result<()> {
 }
 
 pub async fn get_chall_ongoing_by_user(user_id: i64) -> Result<Challenge> {
-    let sql = POOL.read().await;
-    let sql = sql.as_ref().unwrap();
+    let sql = POOL.get().unwrap();
 
     let res: (i64, i64, String, String, i64, Option<String>, Option<i64>) = sqlx::query_as(
         r#"

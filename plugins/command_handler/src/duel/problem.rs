@@ -56,7 +56,7 @@ impl Problem {
 }
 
 pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Vec<Arc<Problem>>> {
-    if rating < 800 || rating > 3500 || rating % 100 != 0 {
+    if !(800..=3500).contains(&rating) || rating % 100 != 0 {
         return Err(anyhow::anyhow!("rating 应该是 800 到 3500 之间的整数"));
     }
 
@@ -140,9 +140,7 @@ fn check_tags(tags: &[String]) -> Result<()> {
         if !TAGS.contains(&tag.as_str()) {
             let similar = TAGS
                 .iter()
-                .max_by_key(|&&t| {
-                    (strsim::normalized_damerau_levenshtein(t, &*tag) * 1000.0) as i64
-                })
+                .max_by_key(|&&t| (strsim::normalized_damerau_levenshtein(t, tag) * 1000.0) as i64)
                 .unwrap();
 
             let diff = strsim::normalized_damerau_levenshtein(similar, tag);
@@ -206,7 +204,7 @@ pub async fn get_last_submission(cf_id: &str) -> Option<Value> {
         _ => return None,
     };
 
-    let submission = submissions.get(0).cloned();
+    let submission = submissions.first().cloned();
 
     submission
 }

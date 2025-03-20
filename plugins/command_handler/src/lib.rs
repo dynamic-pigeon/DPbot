@@ -56,7 +56,7 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
 
-    let (cmd, changed) = match change(&mut args, &command) {
+    let (cmd, changed) = match change(&mut args, command) {
         Ok((cmd, changed)) => (cmd, changed),
         Err(_e) => {
             // event.reply(e.to_string());

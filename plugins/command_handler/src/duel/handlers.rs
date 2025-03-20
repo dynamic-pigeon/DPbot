@@ -424,7 +424,7 @@ pub async fn challenge(event: &MsgEvent, args: &[String]) {
     let user1 = event.user_id;
     let user2 = match args
         .get(2)
-        .and_then(|s| user_id_or_text_str(&s).parse::<i64>().ok())
+        .and_then(|s| user_id_or_text_str(s).parse::<i64>().ok())
     {
         Some(user2) => user2,
         None => {

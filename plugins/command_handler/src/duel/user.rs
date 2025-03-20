@@ -63,7 +63,7 @@ impl User {
     }
 
     pub async fn finish_bind(&mut self) -> Result<()> {
-        let bind = std::mem::replace(&mut self.bind, None);
+        let bind = self.bind.take();
         if bind.is_none() {
             return Err(anyhow::anyhow!("你似乎没有在绑定哦"));
         }

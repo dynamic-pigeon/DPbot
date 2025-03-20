@@ -5,14 +5,14 @@ use kovi::{Message, MsgEvent, log::info, tokio::sync::Mutex};
 
 use crate::{
     PATH,
-    utils::{UIT, user_id_or_text, user_id_or_text_str},
+    utils::{UIT, user_id_or_text},
 };
 
 static RATING_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 static ANALYZE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 pub async fn rating(event: &MsgEvent, args: &[String]) {
-    let user = args.get(2).map(|s| user_id_or_text(&s)).unwrap();
+    let user = args.get(2).map(|s| user_id_or_text(s)).unwrap();
 
     let cf_id = match user_cf_id(&user).await {
         Ok(cf_id) => cf_id,
@@ -65,7 +65,7 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
 }
 
 pub async fn analyze(event: &MsgEvent, args: &[String]) {
-    let user = args.get(2).map(|s| user_id_or_text(&s)).unwrap();
+    let user = args.get(2).map(|s| user_id_or_text(s)).unwrap();
 
     let cf_id = match user_cf_id(&user).await {
         Ok(cf_id) => cf_id,
@@ -83,7 +83,7 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
 
     let _lock = ANALYZE_LOCK.lock().await;
 
-    event.reply("正在查询用户contest记录");
+    event.reply("正在查询用户做题记录");
 
     let output = match kovi::tokio::process::Command::new(py_analyzer_path)
         .arg(py_path)
@@ -117,7 +117,7 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
     event.reply(Message::new().add_image(&format!("file:///{}", image_path)));
 }
 
-async fn user_cf_id<'a>(uit: &UIT<'a>) -> Result<String> {
+async fn user_cf_id(uit: &UIT<'_>) -> Result<String> {
     match uit {
         UIT::At(qq) => {
             let user = crate::sql::duel::user::get_user(*qq)

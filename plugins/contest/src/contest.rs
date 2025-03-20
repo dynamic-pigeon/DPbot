@@ -53,13 +53,13 @@ pub async fn get_all_contests() -> ContestSet {
     let now = kovi::chrono::Utc::now();
     contests
         .iter()
-        .cloned()
         .filter(|c| {
             let start = chrono::NaiveDateTime::parse_from_str(&c.start, "%Y-%m-%dT%H:%M:%S")
                 .unwrap()
                 .and_utc();
             start > now
         })
+        .cloned()
         .collect()
 }
 
@@ -87,7 +87,7 @@ pub async fn init() -> Result<usize> {
     }
 
     let config = {
-        let config = crate::CONFIG.read().await;
+        let config = crate::CONFIG.get().unwrap();
         Arc::clone(&*config)
     };
 
@@ -122,7 +122,7 @@ pub async fn init() -> Result<usize> {
             let config = config.clone();
             kovi::spawn(async move {
                 kovi::tokio::time::sleep(duration.to_std().unwrap()).await;
-                let bot = crate::BOT.read().await.as_ref().unwrap().clone();
+                let bot = crate::BOT.get().unwrap().clone();
                 for group in config.notify_group.iter() {
                     bot.send_group_msg(*group, &msg);
                 }
@@ -134,7 +134,7 @@ pub async fn init() -> Result<usize> {
 }
 
 pub async fn daily_init() {
-    let count = (async || {
+    let count = (async {
         // Retry 3 times
         for _ in 0..3 {
             if let Ok(c) = init().await {
@@ -142,12 +142,12 @@ pub async fn daily_init() {
             }
         }
         Err(anyhow::anyhow!("Failed to init contest"))
-    })()
+    })
     .await;
 
     if let Ok(count) = count {
         info!("{} contests are going to start today.", count);
-        let bot = crate::BOT.read().await.as_ref().unwrap().clone();
+        let bot = crate::BOT.get().unwrap().clone();
 
         let msg = if count == 0 {
             "今天没有比赛，但也不要松懈哦。".to_string()
@@ -155,7 +155,7 @@ pub async fn daily_init() {
             format!("今天装填了 {} 场比赛，准备发射！", count)
         };
 
-        let config = crate::CONFIG.read().await.clone();
+        let config = crate::CONFIG.get().unwrap().clone();
         for group in config.notify_group.iter() {
             bot.send_group_msg(*group, &msg);
         }
@@ -182,6 +182,6 @@ fn seconds_to_str(seconds: i64) -> String {
 }
 
 async fn send_to_super_admin(msg: &str) {
-    let bot = crate::BOT.read().await.as_ref().unwrap().clone();
+    let bot = crate::BOT.get().unwrap().clone();
     bot.send_private_msg(bot.get_main_admin().unwrap(), msg);
 }
