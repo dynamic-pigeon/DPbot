@@ -1,10 +1,7 @@
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
 
 use anyhow::Result;
-use kovi::{
-    log::{debug, info},
-    tokio::sync::RwLock,
-};
+use kovi::log::debug;
 
 pub(crate) mod duel;
 

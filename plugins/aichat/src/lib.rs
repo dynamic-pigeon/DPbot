@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{Arc, LazyLock, OnceLock},
+    sync::{Arc, LazyLock},
 };
 
 use anyhow::Result;
@@ -9,8 +9,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use kovi::{
     Message, PluginBuilder as plugin,
     bot::message::Segment,
-    chrono::format,
-    log::{error, info},
+    log::{debug, error, info},
     serde_json::json,
     tokio::sync::{Mutex, RwLock},
     utils::load_json_data,
@@ -46,7 +45,7 @@ async fn main() {
         async move {
             let text = event.borrow_text().unwrap_or_default().trim();
 
-            if !text.starts_with("/cha") {
+            if !text.starts_with("/chat") {
                 return;
             }
 
@@ -85,6 +84,8 @@ async fn main() {
                 }
             };
 
+            debug!("receive form chat success");
+
             let img = match gen_img(&md, &data_path).await {
                 Ok(v) => v,
                 Err(e) => {
@@ -93,6 +94,8 @@ async fn main() {
                     return;
                 }
             };
+
+            debug!("gen img success");
 
             let base64_img = STANDARD.encode(img);
 
@@ -112,6 +115,9 @@ async fn main() {
 }
 
 async fn gen_img(md: &str, data_path: &PathBuf) -> Result<Vec<u8>> {
+    // 因为截图同时依赖于 html 文件，所以需要提前锁上
+    let mut screenshot_lock = SCREEN_SHOT.lock().await;
+
     let html = md_to_html(md).await;
 
     if !data_path.exists() {
@@ -119,8 +125,6 @@ async fn gen_img(md: &str, data_path: &PathBuf) -> Result<Vec<u8>> {
     }
 
     let file_path = data_path.join("output.html");
-
-    let mut screenshot_lock = SCREEN_SHOT.lock().await;
 
     std::fs::write(&file_path, html).unwrap();
 
@@ -165,7 +169,6 @@ async fn md_to_html(md: &str) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use headless_chrome::{protocol::cdp::Page, types::Bounds};
     use kovi::tokio;
 
     #[tokio::test]

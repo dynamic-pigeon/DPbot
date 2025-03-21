@@ -93,11 +93,11 @@ document.addEventListener("DOMContentLoaded", function() {
 
 pub static HIGH_LIGHT_JS_NEXT_IS_HTML_END: &str = include_str!("html/highlight.js");
 
-pub static HIGH_LIGHT_DARK_CSS_NEXT_IS_HTML3: &str = include_str!("html/highlight_github_dark.css");
+// pub static HIGH_LIGHT_DARK_CSS_NEXT_IS_HTML3: &str = include_str!("html/highlight_github_dark.css");
 
 pub static HIGH_LIGHT_LIGHT_CSS_NEXT_IS_HTML3: &str =
     include_str!("html/highlight_github_light.css");
 
 pub static GITHUB_MARKDOWN_LIGHT_NEXT_IS_HTML2: &str = include_str!("html/github_md_light.css");
 
-pub static GITHUB_MARKDOWN_DARK_NEXT_IS_HTML2: &str = include_str!("html/github_md_dark.css");
+// pub static GITHUB_MARKDOWN_DARK_NEXT_IS_HTML2: &str = include_str!("html/github_md_dark.css");

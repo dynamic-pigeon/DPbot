@@ -1,6 +1,4 @@
 use anyhow::Result;
-use kovi::chrono;
-use kovi::log::info;
 
 use crate::duel::problem::Problem;
 use crate::sql::with_commit;

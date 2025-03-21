@@ -1,10 +1,8 @@
 use std::sync::{Arc, OnceLock};
 
-use anyhow::{Error, Result};
 use duel::handlers;
-use kovi::chrono::Utc;
 use kovi::serde_json::{self, Value};
-use kovi::{Message, MsgEvent, PluginBuilder as plugin, chrono, tokio};
+use kovi::{MsgEvent, PluginBuilder as plugin, tokio};
 use utils::{change, mes_to_text};
 
 pub(crate) mod codeforces;

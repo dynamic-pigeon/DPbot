@@ -109,6 +109,7 @@ pub async fn change_result(challenge: &Challenge) -> Result<()> {
     .await
 }
 
+#[allow(dead_code)]
 pub async fn remove_challenge(challenge: &Challenge) -> Result<()> {
     with_commit(async |trans| {
         sqlx::query(
