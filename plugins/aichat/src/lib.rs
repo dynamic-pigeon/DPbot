@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose::STANDARD};
+use html::END;
 use kovi::{
     Message, PluginBuilder as plugin,
     bot::message::Segment,
@@ -161,6 +162,8 @@ async fn md_to_html(md: &str) -> String {
     html_output.push_str(html::HTML_4_NEXT_IS_HIGH_LIGHT_JS);
     html_output.push_str(html::HIGH_LIGHT_JS_NEXT_IS_HTML_END);
     html_output.push_str(html::HTML_END);
+    html_output.push_str(&format!("<script>{}</script>", html::HTML_SCRIPT));
+    html_output.push_str(END);
 
     html_output
 }

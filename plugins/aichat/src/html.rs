@@ -41,6 +41,8 @@ pub static HTML_3_NEXT_IS_MD_BODY_AND_THEN_IS_HTML4: &str = r#"</style>
 
 pub static HTML_4_NEXT_IS_HIGH_LIGHT_JS: &str = "</article><script>";
 
+pub static HTML_SCRIPT: &str = include_str!("html/katex.min.js");
+
 pub static HTML_END: &str = r#"</script><script>hljs.highlightAll();</script>
 <script>
 const elementsToCheck = ['pre', 'code']; // 需要检测的元素
@@ -69,8 +71,6 @@ document.addEventListener("DOMContentLoaded", function() {
     document.body.appendChild(finishedElement);
 });
 </script>
-<!-- KaTeX 渲染脚本 -->
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
     // 渲染行内公式
@@ -89,7 +89,9 @@ document.addEventListener("DOMContentLoaded", function() {
     });
     });
 </script>
-</body></html>"#;
+"#;
+
+pub static END: &str = r#"</body></html>"#;
 
 pub static HIGH_LIGHT_JS_NEXT_IS_HTML_END: &str = include_str!("html/highlight.js");
 
