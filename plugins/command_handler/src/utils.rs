@@ -98,3 +98,16 @@ pub fn change(args: &mut [String], command: &Value) -> Result<(String, bool)> {
 
     Ok((s, changed))
 }
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub(crate) struct Config {
+    pub py_analyzer_path: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            py_analyzer_path: "".to_string(),
+        }
+    }
+}

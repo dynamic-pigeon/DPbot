@@ -1,7 +1,8 @@
 use std::sync::{Arc, OnceLock};
 
-use duel::handlers;
+use duel::{config, handlers};
 use kovi::serde_json::{self, Value};
+use kovi::utils::load_json_data;
 use kovi::{MsgEvent, PluginBuilder as plugin, tokio};
 use utils::{change, mes_to_text};
 
@@ -11,6 +12,7 @@ pub(crate) mod sql;
 pub(crate) mod utils;
 
 static PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
+static CONFIG: OnceLock<Arc<utils::Config>> = OnceLock::new();
 
 #[kovi::plugin]
 async fn main() {
@@ -23,6 +25,10 @@ async fn main() {
     sql::init(sql_path.to_str().unwrap()).await.unwrap();
 
     duel::init().await;
+
+    let config_path = data_path.join("config.json");
+    let config = load_json_data(Default::default(), config_path).unwrap();
+    CONFIG.get_or_init(|| Arc::new(config));
 
     let command_path = data_path.join("command.json");
 

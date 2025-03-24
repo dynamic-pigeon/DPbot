@@ -64,22 +64,29 @@ pub async fn get_all_contests() -> ContestSet {
 }
 
 pub async fn init() -> Result<usize> {
-    match update_contests().await {
-        Ok(_) => {
-            info!("Contest 加载完成");
+    (async {
+        for _ in 0..3 {
+            if let Ok(_) = update_contests().await {
+                return Ok(());
+            }
         }
-        Err(e) => {
-            error!("Contest 加载失败: {:?}", e);
-            send_to_super_admin(&format!("Contest 加载失败: {:?}", e)).await;
-        }
-    };
+        send_to_super_admin("Failed to update contests").await;
+        Err(anyhow::anyhow!("Failed to update contests"))
+    })
+    .await?;
+
+    info!("Contest 加载完成");
+
     let contests = CONTESTS.read().await.clone();
     let now = today_utc();
     let mut map: HashMap<_, Vec<Arc<Contest>>> = HashMap::new();
+    let offset = FixedOffset::east_opt(8 * 3600).unwrap();
 
     for contest in contests.iter().cloned() {
-        let start =
-            chrono::NaiveDateTime::parse_from_str(&contest.start, "%Y-%m-%dT%H:%M:%S")?.and_utc();
+        let start = chrono::NaiveDateTime::parse_from_str(&contest.start, "%Y-%m-%dT%H:%M:%S")?
+            .and_utc()
+            .with_timezone(&offset)
+            .to_utc();
         if start < now || start.num_days_from_ce() != now.num_days_from_ce() {
             continue;
         }
@@ -102,8 +109,7 @@ pub async fn init() -> Result<usize> {
 
                 msg.push_str(&add);
             }
-            let offset = FixedOffset::east_opt(8 * 3600).unwrap();
-            let start = time.with_timezone(&offset).to_utc();
+            let start = time;
             let now = today_utc();
 
             let notify_time = start - chrono::Duration::minutes(*sub_time);
@@ -134,16 +140,7 @@ pub async fn init() -> Result<usize> {
 }
 
 pub async fn daily_init() {
-    let count = (async {
-        // Retry 3 times
-        for _ in 0..3 {
-            if let Ok(c) = init().await {
-                return Ok(c);
-            }
-        }
-        Err(anyhow::anyhow!("Failed to init contest"))
-    })
-    .await;
+    let count = init().await;
 
     if let Ok(count) = count {
         info!("{} contests are going to start today.", count);

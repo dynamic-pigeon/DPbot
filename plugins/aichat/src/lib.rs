@@ -91,8 +91,14 @@ async fn main() {
                 Ok(v) => v,
                 Err(e) => {
                     error!("{}", e);
-                    event.reply("未知错误");
-                    return;
+                    match gen_img(&md, &data_path).await {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error!("{}", e);
+                            event.reply("生成图片失败");
+                            return;
+                        }
+                    }
                 }
             };
 

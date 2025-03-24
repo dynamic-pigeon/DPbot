@@ -11,25 +11,25 @@ pub async fn get_ongoing_challenges() -> Result<Vec<Challenge>> {
 
     let res: Vec<(i64, i64, String, String, i64, Option<String>, Option<i64>)> = sqlx::query_as(
         r#"
-        SELECT * FROM duel WHERE started = 1
+        SELECT * FROM duel WHERE result IS NULL
         "#,
     )
     .fetch_all(sql)
     .await?;
 
     let challenges = res
-        .iter()
+        .into_iter()
         .map(|(user1, user2, time, tags, rating, problem, result)| {
-            let time = chrono::DateTime::parse_from_rfc3339(time)
+            let time = chrono::DateTime::parse_from_rfc3339(&time)
                 .map(|dst| dst.to_utc())
                 .unwrap();
 
-            let tags = serde_json::from_str(tags).unwrap();
+            let tags = serde_json::from_str(&tags).unwrap();
             let problem = problem
                 .as_ref()
                 .map(|problem| serde_json::from_str(problem).unwrap());
 
-            Challenge::new(*user1, *user2, time, tags, *rating, problem, *result, 1)
+            Challenge::new(user1, user2, time, tags, rating, problem, result, 1)
         })
         .collect();
 

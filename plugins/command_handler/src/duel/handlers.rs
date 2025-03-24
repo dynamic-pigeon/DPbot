@@ -283,7 +283,7 @@ pub async fn judge(event: &MsgEvent) {
                 winner.rating,
                 user2.cf_id.unwrap(),
                 user2.rating,
-                loser.rating - user2.rating,
+                user2.rating - loser.rating,
                 loser.rating
             );
             event.reply(result);

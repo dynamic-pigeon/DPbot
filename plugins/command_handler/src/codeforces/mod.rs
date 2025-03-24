@@ -1,10 +1,11 @@
 use std::{path::Path, sync::LazyLock};
 
 use anyhow::Result;
+use base64::{Engine, engine::general_purpose::STANDARD};
 use kovi::{Message, MsgEvent, log::info, tokio::sync::Mutex};
 
 use crate::{
-    PATH,
+    CONFIG, PATH,
     utils::{UIT, user_id_or_text},
 };
 
@@ -23,7 +24,7 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
     };
 
     let path = PATH.get().unwrap().join("codeforces");
-    let py_analyzer_path = path.join(".venv/bin/python");
+    let py_analyzer_path = CONFIG.get().unwrap().py_analyzer_path.clone();
     let py_path = path.join("rating.py");
     let image_path = path.join("rating.png");
     let image_path = image_path.to_str().unwrap();
@@ -61,7 +62,10 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
         return;
     }
 
-    event.reply(Message::new().add_image(&format!("file:///{}", image_path)));
+    let image = std::fs::read(&image_path).unwrap();
+    let image = STANDARD.encode(image);
+
+    event.reply(Message::new().add_image(&format!("base64://{}", image)));
 }
 
 pub async fn analyze(event: &MsgEvent, args: &[String]) {
@@ -76,7 +80,7 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
     };
 
     let path = PATH.get().unwrap().join("codeforces");
-    let py_analyzer_path = path.join(".venv/bin/python");
+    let py_analyzer_path = CONFIG.get().unwrap().py_analyzer_path.clone();
     let py_path = path.join("analyze.py");
     let image_path = path.join("analyze.png");
     let image_path = image_path.to_str().unwrap();
@@ -114,7 +118,10 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
         return;
     }
 
-    event.reply(Message::new().add_image(&format!("file:///{}", image_path)));
+    let image = std::fs::read(&image_path).unwrap();
+    let image = STANDARD.encode(image);
+
+    event.reply(Message::new().add_image(&format!("base64://{}", image)));
 }
 
 async fn user_cf_id(uit: &UIT<'_>) -> Result<String> {

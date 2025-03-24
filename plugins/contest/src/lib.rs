@@ -27,7 +27,7 @@ async fn main() {
     let config = load_json_data(Default::default(), config_path).unwrap();
     CONFIG.get_or_init(|| Arc::new(config));
 
-    plugin::cron("0 0 * * *", || async {
+    plugin::cron("0 8 * * *", || async {
         contest::daily_init().await;
     })
     .unwrap();

@@ -29,8 +29,8 @@ pub async fn update_user(user: &User) -> Result<()> {
         .bind(user.rating)
         .bind(&user.cf_id)
         .bind(user.daily_score)
-        .bind(user.qq)
         .bind(&user.last_daily)
+        .bind(user.qq)
         .execute(&mut **trans)
         .await?;
 

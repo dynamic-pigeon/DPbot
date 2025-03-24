@@ -117,7 +117,7 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Ve
             tags.is_empty()
                 || tags
                     .iter()
-                    .any(|tag| problem.tags.contains(&tag.to_string()))
+                    .all(|tag| problem.tags.contains(&tag.to_string()))
         })
         // filter by special tags
         .filter(|p| {
