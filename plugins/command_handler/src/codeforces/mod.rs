@@ -62,7 +62,7 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
         return;
     }
 
-    let image = std::fs::read(&image_path).unwrap();
+    let image = std::fs::read(image_path).unwrap();
     let image = STANDARD.encode(image);
 
     event.reply(Message::new().add_image(&format!("base64://{}", image)));
@@ -118,7 +118,7 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
         return;
     }
 
-    let image = std::fs::read(&image_path).unwrap();
+    let image = std::fs::read(image_path).unwrap();
     let image = STANDARD.encode(image);
 
     event.reply(Message::new().add_image(&format!("base64://{}", image)));

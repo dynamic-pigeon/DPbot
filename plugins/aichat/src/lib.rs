@@ -96,6 +96,11 @@ async fn main() {
                         Err(e) => {
                             error!("{}", e);
                             event.reply("生成图片失败");
+                            // send text only
+                            let text_seg = Segment::new("text", json!({ "text": md }));
+                            let seg = Segment::new("node", json!({ "content": [text_seg] }));
+                            let msg = Message::from(vec![seg]);
+                            event.reply(msg);
                             return;
                         }
                     }

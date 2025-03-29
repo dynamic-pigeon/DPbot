@@ -62,7 +62,7 @@ async fn main() {
                         log::error!("make word cloud failed: {}, group_id: {}", e, group_id);
                         bot.send_private_msg(
                             bot.get_main_admin().unwrap(),
-                            &format!("make word cloud failed: {}, group_id: {}", e, group_id),
+                            format!("make word cloud failed: {}, group_id: {}", e, group_id),
                         );
                         continue;
                     }
@@ -157,7 +157,7 @@ async fn make_word_cloud(
         .arg(data_path)
         .arg("--mask")
         .arg(mask_path)
-        .args(&["--background", "white"])
+        .args(["--background", "white"])
         .arg("--stopwords")
         .arg(stop_word_path)
         .arg("--fontfile")

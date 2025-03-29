@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Ok, Result};
-use kovi::{
-    log::info,
-    serde_json::{self, Value},
-};
+use kovi::serde_json::{self, Value};
 
 use crate::{CONFIG, contest::Contest};
 
@@ -13,7 +10,7 @@ pub async fn fetch_contest() -> Result<Vec<Arc<Contest>>> {
 
     let config = {
         let config = CONFIG.get().unwrap();
-        Arc::clone(&*config)
+        Arc::clone(config)
     };
 
     for contest_id in config.clist_contest.iter() {

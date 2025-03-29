@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use config::Config;
-use kovi::MsgEvent;
+use kovi::bot::message::Segment;
 use kovi::bot::runtimebot::kovi_api::SetAccessControlList;
-use kovi::serde_json::Value;
+use kovi::log::info;
+use kovi::serde_json::{Value, json};
 use kovi::utils::load_json_data;
 use kovi::{Message, PluginBuilder as plugin};
+use kovi::{MsgEvent, serde_json};
 
 mod config;
 
@@ -78,7 +80,24 @@ async fn handle_help(event: &MsgEvent, help: &Value, duel_help: &Value) {
     }
 
     if text == "duel" {
-        let msg = Message::from_value((*duel_help).clone()).unwrap();
+        let arr = match duel_help {
+            Value::Array(arr) => arr,
+            _ => {
+                event.reply("未找到该模块");
+                return;
+            }
+        };
+        let mut segs = Vec::with_capacity(arr.len());
+        for v in arr {
+            segs.push(Segment::new(
+                "node",
+                json!({
+                    "content": [v]
+                }),
+            ));
+        }
+
+        let msg = Message::from(segs);
 
         event.reply(msg);
 

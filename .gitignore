@@ -11,3 +11,6 @@ log
 data/command_handler/codeforces/.venv
 data/aichat/config.json
 data/aichat/output.html
+data/word_cloud/word_cloud.db
+data/word_cloud/config.json
+data/command_handler/config.json

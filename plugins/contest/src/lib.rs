@@ -1,12 +1,10 @@
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use kovi::{
     Message, PluginBuilder as plugin, RuntimeBot,
     bot::message::Segment,
     chrono::{DateTime, FixedOffset, Utc},
-    log::info,
     serde_json::json,
-    tokio::sync::RwLock,
     utils::load_json_data,
 };
 

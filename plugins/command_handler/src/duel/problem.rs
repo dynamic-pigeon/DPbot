@@ -60,16 +60,60 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Ve
         return Err(anyhow::anyhow!("rating 应该是 800 到 3500 之间的整数"));
     }
 
+    let tags = tags
+        .iter()
+        .map(|tag| tag.replace("_", " "))
+        .collect::<Vec<_>>();
+
+    check_tags(&tags)?;
+
+    let tags = tags
+        .iter()
+        .map(|tag| {
+            if tag == "*special problem" {
+                "*special".to_string()
+            } else {
+                tag.to_string()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let (pos_tags, nag_tags) = {
+        let mut pos_tags = Vec::new();
+        let mut nag_tags = Vec::new();
+        for tag in tags.iter() {
+            if let Some(tag) = tag.strip_prefix('!') {
+                nag_tags.push(tag);
+            } else {
+                pos_tags.push(tag.as_str());
+            }
+        }
+        (pos_tags, nag_tags)
+    };
+    let problems = get_problems().await?;
+
+    let problems = problems
+        .iter()
+        .filter(filter_by_nag(&nag_tags, qq).await?)
+        .filter(filter_by_pos(&pos_tags, qq).await?)
+        .filter(|problem| problem.rating == rating)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    Ok(problems)
+}
+
+async fn filter_by_nag(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Problem>) -> bool> {
     let mut new = false;
     let mut not_seen = false;
 
     let tags = tags
         .iter()
         .filter(|tag| {
-            if *tag == "new" {
+            if **tag == "new" {
                 new = true;
                 false
-            } else if *tag == "not-seen" {
+            } else if **tag == "not-seen" {
                 not_seen = true;
                 false
             } else {
@@ -78,10 +122,6 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Ve
         })
         .map(|tag| tag.replace("_", " "))
         .collect::<Vec<_>>();
-
-    check_tags(&tags)?;
-
-    let problems = get_problems().await?;
 
     let seen = if not_seen {
         let Some(cf_id) = crate::sql::duel::user::get_user(qq).await?.cf_id else {
@@ -108,31 +148,93 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Ve
         HashSet::new()
     };
 
-    let problems = problems
-        .iter()
-        // filter by rating
-        .filter(|problem| problem.rating == rating)
+    let filter = move |problem: &&Arc<Problem>| -> bool {
         // filter by tags
-        .filter(|problem| {
-            tags.is_empty()
-                || tags
-                    .iter()
-                    .all(|tag| problem.tags.contains(&tag.to_string()))
-        })
+        if !tags.is_empty()
+            && tags
+                .iter()
+                .any(|tag| problem.tags.contains(&tag.to_string()))
+        {
+            return false;
+        }
         // filter by special tags
-        .filter(|p| {
-            if new && p.contest_id <= 1000 {
-                return false;
+        if new && problem.contest_id > 1000 {
+            return false;
+        }
+        if not_seen && !seen.contains(&(problem.contest_id, problem.index.clone())) {
+            return false;
+        }
+        true
+    };
+
+    Ok(filter)
+}
+
+async fn filter_by_pos(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Problem>) -> bool> {
+    let mut new = false;
+    let mut not_seen = false;
+
+    let tags = tags
+        .iter()
+        .filter(|tag| {
+            if **tag == "new" {
+                new = true;
+                false
+            } else if **tag == "not-seen" {
+                not_seen = true;
+                false
+            } else {
+                true
             }
-            if not_seen && seen.contains(&(p.contest_id, p.index.clone())) {
-                return false;
-            }
-            true
         })
-        .cloned()
+        .map(|tag| tag.replace("_", " "))
         .collect::<Vec<_>>();
 
-    Ok(problems)
+    let seen = if not_seen {
+        let Some(cf_id) = crate::sql::duel::user::get_user(qq).await?.cf_id else {
+            return Err(anyhow::anyhow!(
+                "你还没有绑定 CF 账号，不能使用 not-seen 标签"
+            ));
+        };
+
+        let submissions = get_recent_submissions(&cf_id).await.unwrap_or_default();
+        let seen = submissions
+            .into_iter()
+            .filter(|submission| {
+                submission.get("verdict") == Some(&Value::String("OK".to_string()))
+            })
+            .map(|submission| {
+                let problem = submission["problem"].as_object().unwrap();
+                let contest_id = problem["contestId"].as_i64().unwrap();
+                let index = problem["index"].as_str().unwrap().to_string();
+                (contest_id, index)
+            })
+            .collect::<HashSet<_>>();
+        seen
+    } else {
+        HashSet::new()
+    };
+
+    let filter = move |problem: &&Arc<Problem>| -> bool {
+        // filter by tags
+        if !tags.is_empty()
+            && !tags
+                .iter()
+                .all(|tag| problem.tags.contains(&tag.to_string()))
+        {
+            return false;
+        }
+        // filter by special tags
+        if new && problem.contest_id <= 1000 {
+            return false;
+        }
+        if not_seen && !seen.contains(&(problem.contest_id, problem.index.clone())) {
+            return false;
+        }
+        true
+    };
+
+    Ok(filter)
 }
 
 fn check_tags(tags: &[String]) -> Result<()> {

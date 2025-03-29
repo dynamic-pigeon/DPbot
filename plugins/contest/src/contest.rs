@@ -1,13 +1,12 @@
 use std::{
     collections::HashMap,
-    f32::consts::E,
     sync::{Arc, LazyLock},
 };
 
 use anyhow::Result;
 use kovi::{
     chrono::{self, Datelike, FixedOffset},
-    log::{error, info},
+    log::info,
     tokio::sync::RwLock,
 };
 use serde::Deserialize;
@@ -66,7 +65,7 @@ pub async fn get_all_contests() -> ContestSet {
 pub async fn init() -> Result<usize> {
     (async {
         for _ in 0..3 {
-            if let Ok(_) = update_contests().await {
+            if (update_contests().await).is_ok() {
                 return Ok(());
             }
         }
@@ -95,7 +94,7 @@ pub async fn init() -> Result<usize> {
 
     let config = {
         let config = crate::CONFIG.get().unwrap();
-        Arc::clone(&*config)
+        Arc::clone(config)
     };
 
     let mut count = 0;
