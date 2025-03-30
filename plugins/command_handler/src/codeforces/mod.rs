@@ -1,8 +1,8 @@
-use std::{path::Path, sync::LazyLock};
+use std::sync::LazyLock;
 
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use kovi::{Message, MsgEvent, log::info, tokio::sync::Mutex};
+use kovi::{Message, MsgEvent, tokio::sync::Mutex};
 
 use crate::{
     CONFIG, PATH,
@@ -26,8 +26,6 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
     let path = PATH.get().unwrap().join("codeforces");
     let py_analyzer_path = CONFIG.get().unwrap().py_analyzer_path.clone();
     let py_path = path.join("rating.py");
-    let image_path = path.join("rating.png");
-    let image_path = image_path.to_str().unwrap();
 
     let _lock = RATING_LOCK.lock().await;
 
@@ -36,7 +34,6 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
     let output = match kovi::tokio::process::Command::new(py_analyzer_path)
         .arg(py_path)
         .arg(cf_id)
-        .arg(image_path)
         .output()
         .await
     {
@@ -55,14 +52,7 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
         return;
     }
 
-    info!("image_path: {}", image_path);
-
-    if !Path::new(&image_path.to_string()).exists() {
-        event.reply("查询失败: 未知错误");
-        return;
-    }
-
-    let image = std::fs::read(image_path).unwrap();
+    let image = output.stdout;
     let image = STANDARD.encode(image);
 
     event.reply(Message::new().add_image(&format!("base64://{}", image)));
@@ -82,8 +72,6 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
     let path = PATH.get().unwrap().join("codeforces");
     let py_analyzer_path = CONFIG.get().unwrap().py_analyzer_path.clone();
     let py_path = path.join("analyze.py");
-    let image_path = path.join("analyze.png");
-    let image_path = image_path.to_str().unwrap();
 
     let _lock = ANALYZE_LOCK.lock().await;
 
@@ -92,7 +80,6 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
     let output = match kovi::tokio::process::Command::new(py_analyzer_path)
         .arg(py_path)
         .arg(cf_id)
-        .arg(image_path)
         .output()
         .await
     {
@@ -111,14 +98,7 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
         return;
     }
 
-    info!("image_path: {}", image_path);
-
-    if !Path::new(&image_path.to_string()).exists() {
-        event.reply("查询失败: 未知错误");
-        return;
-    }
-
-    let image = std::fs::read(image_path).unwrap();
+    let image = output.stdout;
     let image = STANDARD.encode(image);
 
     event.reply(Message::new().add_image(&format!("base64://{}", image)));

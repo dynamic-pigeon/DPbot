@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use config::Config;
+use kovi::MsgEvent;
 use kovi::bot::message::Segment;
 use kovi::bot::runtimebot::kovi_api::SetAccessControlList;
-use kovi::log::info;
 use kovi::serde_json::{Value, json};
 use kovi::utils::load_json_data;
 use kovi::{Message, PluginBuilder as plugin};
-use kovi::{MsgEvent, serde_json};
 
 mod config;
 
@@ -87,15 +86,18 @@ async fn handle_help(event: &MsgEvent, help: &Value, duel_help: &Value) {
                 return;
             }
         };
-        let mut segs = Vec::with_capacity(arr.len());
-        for v in arr {
-            segs.push(Segment::new(
-                "node",
-                json!({
-                    "content": [v]
-                }),
-            ));
-        }
+
+        let segs = arr
+            .iter()
+            .map(|v| {
+                Segment::new(
+                    "node",
+                    json!({
+                        "content": [v]
+                    }),
+                )
+            })
+            .collect::<Vec<_>>();
 
         let msg = Message::from(segs);
 

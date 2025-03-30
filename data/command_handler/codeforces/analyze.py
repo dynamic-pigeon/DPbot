@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import requests
-import json
+from io import BytesIO
 import sys
 
 
@@ -9,7 +9,7 @@ def fetch_json(url):
     return response.json()
 
 
-def analyze(CF_id, path):
+def analyze(CF_id):
     json = fetch_json("https://codeforces.com/api/user.status?handle={}".format(CF_id))
     if json["status"] != "OK":
         return json["comment"]
@@ -57,10 +57,13 @@ def analyze(CF_id, path):
     plt.title("{} solved {} problems in total".format(CF_id, len(AC_status)))
     plt.xlabel("Rating")
     plt.ylabel("Frequency")
-    plt.savefig(path)
+
+    with BytesIO() as buffer:
+        plt.savefig(buffer, format="png")
+        buffer.seek(0)  # 在读取之前移动到缓冲区的开头
+        sys.stdout.buffer.write(buffer.read())
 
 
 if __name__ == "__main__":
     CF_id = sys.argv[1]
-    path = sys.argv[2]
-    analyze(CF_id, path)
+    analyze(CF_id)

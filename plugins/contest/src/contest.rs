@@ -18,6 +18,7 @@ type ContestSet = Vec<Arc<Contest>>;
 pub(crate) static CONTESTS: LazyLock<RwLock<Arc<ContestSet>>> =
     LazyLock::new(|| RwLock::new(Arc::new(Vec::new())));
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct Contest {
     pub duration: u64,
@@ -63,7 +64,7 @@ pub async fn get_all_contests() -> ContestSet {
 }
 
 pub async fn init() -> Result<usize> {
-    (async {
+    async {
         for _ in 0..3 {
             if (update_contests().await).is_ok() {
                 return Ok(());
@@ -71,7 +72,7 @@ pub async fn init() -> Result<usize> {
         }
         send_to_super_admin("Failed to update contests").await;
         Err(anyhow::anyhow!("Failed to update contests"))
-    })
+    }
     .await?;
 
     info!("Contest 加载完成");
@@ -102,9 +103,9 @@ pub async fn init() -> Result<usize> {
     for (time, contests) in map {
         count += contests.len();
         for sub_time in config.notify_time.iter() {
-            let mut msg = format!("选手注意，以下比赛还有不到 {} 分钟就要开始了：\n", sub_time);
+            let mut msg = format!("选手注意，以下比赛还有不到 {} 分钟就要开始了：", sub_time);
             for contest in contests.iter().cloned() {
-                let add = format!("\n{}\n{}\n", contest.event, contest.href);
+                let add = format!("\n\n{}\n{}", contest.event, contest.href);
 
                 msg.push_str(&add);
             }

@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import requests
 import sys
 import matplotlib.dates as mdates
+from io import BytesIO
 
 
 def fetch_json(url):
@@ -11,7 +12,7 @@ def fetch_json(url):
     return response.json()
 
 
-def contest(CF_id, path):
+def contest(CF_id):
     json = fetch_json("https://codeforces.com/api/user.rating?handle={}".format(CF_id))
     if json["status"] != "OK":
         return json["comment"]
@@ -50,10 +51,13 @@ def contest(CF_id, path):
     )
     plt.legend()
     plt.tick_params(axis="x", rotation=30)
-    plt.savefig(path)
+
+    with BytesIO() as buffer:
+        plt.savefig(buffer, format="png")
+        buffer.seek(0)  # 在读取之前移动到缓冲区的开头
+        sys.stdout.buffer.write(buffer.read())
 
 
 if __name__ == "__main__":
     CF_id = sys.argv[1]
-    path = sys.argv[2]
-    contest(CF_id, path)
+    contest(CF_id)

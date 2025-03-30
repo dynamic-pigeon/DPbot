@@ -1,7 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
 use duel::handlers;
-use kovi::log::info;
 use kovi::serde_json::{self, Value};
 use kovi::utils::load_json_data;
 use kovi::{MsgEvent, PluginBuilder as plugin, tokio};
