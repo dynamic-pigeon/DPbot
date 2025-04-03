@@ -6,16 +6,16 @@ use kovi::{
 use anyhow::{Error, Result};
 use kovi::serde_json::Value;
 
-pub enum UIT<'a> {
+pub enum IdOrText<'a> {
     Text(&'a str),
     At(i64),
 }
 
-pub fn user_id_or_text(text: &str) -> UIT {
+pub fn user_id_or_text(text: &str) -> IdOrText {
     if let Some(user_id) = text.strip_prefix("@") {
-        UIT::At(user_id.parse().unwrap())
+        IdOrText::At(user_id.parse().unwrap())
     } else {
-        UIT::Text(text)
+        IdOrText::Text(text)
     }
 }
 
@@ -49,13 +49,13 @@ pub fn today_utc() -> chrono::DateTime<Utc> {
 }
 
 // 解析指令并替换
-pub fn change(args: &mut [String], command: &Value) -> Result<(String, bool)> {
+pub fn change(args: &mut [String], commands: &Value) -> Result<(String, bool)> {
     let mut changed = false;
 
-    let mut point = command;
+    let mut point = commands;
 
     let mut i = 0;
-    let s = loop {
+    let command = loop {
         let map = match point {
             Value::String(s) => break s.clone(),
             Value::Object(obj) => obj,
@@ -96,7 +96,7 @@ pub fn change(args: &mut [String], command: &Value) -> Result<(String, bool)> {
         i += 1;
     };
 
-    Ok((s, changed))
+    Ok((command, changed))
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]

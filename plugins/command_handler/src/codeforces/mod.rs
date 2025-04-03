@@ -6,7 +6,7 @@ use kovi::{Message, MsgEvent, tokio::sync::Mutex};
 
 use crate::{
     CONFIG, PATH,
-    utils::{UIT, user_id_or_text},
+    utils::{IdOrText, user_id_or_text},
 };
 
 static RATING_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -104,9 +104,9 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
     event.reply(Message::new().add_image(&format!("base64://{}", image)));
 }
 
-async fn user_cf_id(uit: &UIT<'_>) -> Result<String> {
+async fn user_cf_id(uit: &IdOrText<'_>) -> Result<String> {
     match uit {
-        UIT::At(qq) => {
+        IdOrText::At(qq) => {
             let user = crate::sql::duel::user::get_user(*qq)
                 .await
                 .map_err(|_| anyhow::anyhow!("未找到用户"))?;
@@ -114,6 +114,6 @@ async fn user_cf_id(uit: &UIT<'_>) -> Result<String> {
                 .cf_id
                 .ok_or_else(|| anyhow::anyhow!("用户未绑定 cf 账号"))?)
         }
-        UIT::Text(text) => Ok(text.to_string()),
+        IdOrText::Text(text) => Ok(text.to_string()),
     }
 }

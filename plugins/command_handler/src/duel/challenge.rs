@@ -51,6 +51,14 @@ pub async fn remove_challenge(user1: i64, user2: i64) -> Option<Challenge> {
     Some(challenges.remove(index))
 }
 
+pub async fn remove_challenge_by_user(user1: i64) -> Option<Challenge> {
+    let mut challenges = CHALLENGES.write().await;
+    let index = challenges
+        .iter()
+        .position(|challenge| challenge.user1 == user1 || challenge.user2 == user1)?;
+    Some(challenges.remove(index))
+}
+
 pub async fn user_inside(user_id: i64) -> bool {
     let challenges = CHALLENGES.read().await;
     challenges
@@ -130,7 +138,7 @@ impl Challenge {
         user1.rating = new_user1_rating;
         user2.rating = new_user2_rating;
 
-        sql::duel::user::update_two_user(&user1, &user2).await?;
+        sql::duel::user::update_two_user_rating(&user1, &user2).await?;
         sql::duel::challenge::change_result(self).await?;
 
         Ok(())
@@ -148,36 +156,10 @@ impl Challenge {
             .await
             .ok_or(anyhow::anyhow!("获取提交记录失败"))?;
 
-        let score = |submission: kovi::serde_json::Value| {
-            debug!("Submission: {:#?}", submission);
-            let problem = submission
-                .get("problem")
-                .and_then(crate::duel::problem::Problem::from_value)
-                .unwrap_or_else(|| Problem::new(0, "".to_string(), 0, vec![]));
+        let user1_score = self.calc_score(user1_sub)?;
+        let user2_score = self.calc_score(user2_sub)?;
 
-            if problem.contest_id != self.problem.as_ref().unwrap().contest_id
-                || problem.index != self.problem.as_ref().unwrap().index
-            {
-                return Ok((0, 0));
-            }
-
-            let pass = submission
-                .get("verdict")
-                .and_then(|v| v.as_str())
-                .ok_or(anyhow::anyhow!("获取提交结果失败"))?
-                == "OK";
-            let time = submission
-                .get("creationTimeSeconds")
-                .and_then(|v| v.as_i64())
-                .ok_or(anyhow::anyhow!("获取提交时间失败"))?;
-
-            Ok((if pass { 1 } else { 0 }, -time))
-        };
-
-        let user1_score = score(user1_sub)?;
-        let user2_score = score(user2_sub)?;
-
-        if user1_score.0 + user2_score.0 == 0 {
+        if !user1_score.0 && !user2_score.0 {
             return Err(anyhow::anyhow!("你还没有通过题目哦"));
         }
 
@@ -197,9 +179,37 @@ impl Challenge {
         user1.rating = new_user1_rating;
         user2.rating = new_user2_rating;
 
-        sql::duel::user::update_two_user(&user1, &user2).await?;
+        sql::duel::user::update_two_user_rating(&user1, &user2).await?;
 
         Ok(())
+    }
+
+    /// @param submission 提交记录
+    /// @return (是否通过, -提交时间)
+    fn calc_score(&self, submission: kovi::serde_json::Value) -> Result<(bool, i64)> {
+        debug!("Submission: {:#?}", submission);
+        let problem = submission
+            .get("problem")
+            .and_then(crate::duel::problem::Problem::from_value)
+            .unwrap_or_else(|| Problem::new(0, "".to_string(), 0, vec![]));
+
+        if problem.contest_id != self.problem.as_ref().unwrap().contest_id
+            || problem.index != self.problem.as_ref().unwrap().index
+        {
+            return Ok((false, 0));
+        }
+
+        let pass = submission
+            .get("verdict")
+            .and_then(|v| v.as_str())
+            .ok_or(anyhow::anyhow!("获取提交结果失败"))?
+            == "OK";
+        let time = submission
+            .get("creationTimeSeconds")
+            .and_then(|v| v.as_i64())
+            .ok_or(anyhow::anyhow!("获取提交时间失败"))?;
+
+        Ok((pass, -time))
     }
 
     pub async fn change(&mut self) -> Result<Arc<Problem>> {

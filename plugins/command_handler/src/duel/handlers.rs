@@ -3,7 +3,7 @@ use rand::seq::SliceRandom;
 
 use crate::{
     sql,
-    utils::{today_utc, user_id_or_text_str},
+    utils::{IdOrText, today_utc, user_id_or_text, user_id_or_text_str},
 };
 
 use super::challenge::Challenge;
@@ -298,7 +298,7 @@ pub async fn judge(event: &MsgEvent) {
 pub async fn change(event: &MsgEvent) {
     let user_id = event.user_id;
 
-    match super::challenge::get_challenge(user_id).await {
+    match super::challenge::remove_challenge_by_user(user_id).await {
         Some(mut challenge) => {
             if challenge.started == 0 {
                 event.reply("你还没有开始决斗");
@@ -312,6 +312,7 @@ pub async fn change(event: &MsgEvent) {
                         return;
                     }
                 };
+
                 challenge.changed = None;
 
                 let problem = format!(
@@ -338,8 +339,6 @@ pub async fn change(event: &MsgEvent) {
                 }
             };
 
-            super::challenge::add_challenge(challenge).await;
-
             let user = match sql::duel::user::get_user(user_id).await {
                 Ok(user) => user,
                 Err(_) => {
@@ -352,6 +351,8 @@ pub async fn change(event: &MsgEvent) {
                 "{} 发起了换题请求，请输入 /duel change 确认",
                 user.cf_id.unwrap()
             ));
+
+            super::challenge::add_challenge(challenge).await;
         }
     }
 }
@@ -359,6 +360,10 @@ pub async fn change(event: &MsgEvent) {
 pub async fn decline(event: &MsgEvent) {
     let user2 = event.user_id;
     let user1 = match crate::duel::challenge::get_challenge_by_user2(user2).await {
+        Some(challenge) if challenge.started == 1 => {
+            event.reply("比赛已经开始了");
+            return;
+        }
         Some(challenge) => challenge.user1,
         None => {
             event.reply("你没有收到挑战");
@@ -376,6 +381,10 @@ pub async fn decline(event: &MsgEvent) {
 pub async fn cancel(event: &MsgEvent) {
     let user1 = event.user_id;
     let user2 = match crate::duel::challenge::get_challenge_by_user1(user1).await {
+        Some(challenge) if challenge.started == 1 => {
+            event.reply("比赛已经开始了");
+            return;
+        }
         Some(challenge) => challenge.user2,
         None => {
             event.reply("你没有发起挑战");
@@ -393,6 +402,10 @@ pub async fn cancel(event: &MsgEvent) {
 pub async fn accept(event: &MsgEvent) {
     let user2 = event.user_id;
     let user1 = match crate::duel::challenge::get_challenge_by_user2(user2).await {
+        Some(challenge) if challenge.started == 1 => {
+            event.reply("比赛已经开始了");
+            return;
+        }
         Some(challenge) => challenge.user1,
         None => {
             event.reply("你没有收到挑战");
@@ -422,10 +435,10 @@ pub async fn accept(event: &MsgEvent) {
 
 pub async fn challenge(event: &MsgEvent, args: &[String]) {
     let user1 = event.user_id;
-    let user2 = match args
-        .get(2)
-        .and_then(|s| user_id_or_text_str(s).parse::<i64>().ok())
-    {
+    let user2 = match args.get(2).and_then(|s| match user_id_or_text(s) {
+        IdOrText::At(user_id) => Some(user_id),
+        _ => None,
+    }) {
         Some(user2) => user2,
         None => {
             event.reply("参数非法");
@@ -461,7 +474,7 @@ pub async fn challenge(event: &MsgEvent, args: &[String]) {
 
     let rating = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
 
-    if rating < 800 || rating > 3500 || rating % 100 != 0 {
+    if !(800..=3500).contains(&rating) || rating % 100 != 0 {
         event.reply("rating 应该是 800 到 3500 之间的整数");
         return;
     }

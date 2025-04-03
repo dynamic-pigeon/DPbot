@@ -68,12 +68,12 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Ve
     check_tags(&tags)?;
 
     let tags = tags
-        .iter()
+        .into_iter()
         .map(|tag| {
             if tag == "*special problem" {
                 "*special".to_string()
             } else {
-                tag.to_string()
+                tag
             }
         })
         .collect::<Vec<_>>();
@@ -104,49 +104,7 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Ve
 }
 
 async fn filter_by_nag(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Problem>) -> bool> {
-    let mut new = false;
-    let mut not_seen = false;
-
-    let tags = tags
-        .iter()
-        .filter(|tag| {
-            if **tag == "new" {
-                new = true;
-                false
-            } else if **tag == "not-seen" {
-                not_seen = true;
-                false
-            } else {
-                true
-            }
-        })
-        .map(|tag| tag.replace("_", " "))
-        .collect::<Vec<_>>();
-
-    let seen = if not_seen {
-        let Some(cf_id) = crate::sql::duel::user::get_user(qq).await?.cf_id else {
-            return Err(anyhow::anyhow!(
-                "你还没有绑定 CF 账号，不能使用 not-seen 标签"
-            ));
-        };
-
-        let submissions = get_recent_submissions(&cf_id).await.unwrap_or_default();
-        let seen = submissions
-            .into_iter()
-            .filter(|submission| {
-                submission.get("verdict") == Some(&Value::String("OK".to_string()))
-            })
-            .map(|submission| {
-                let problem = submission["problem"].as_object().unwrap();
-                let contest_id = problem["contestId"].as_i64().unwrap();
-                let index = problem["index"].as_str().unwrap().to_string();
-                (contest_id, index)
-            })
-            .collect::<HashSet<_>>();
-        seen
-    } else {
-        HashSet::new()
-    };
+    let (new, not_seen, seen, tags) = filter_help(tags, qq).await?;
 
     let filter = move |problem: &&Arc<Problem>| -> bool {
         // filter by tags
@@ -171,6 +129,41 @@ async fn filter_by_nag(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Proble
 }
 
 async fn filter_by_pos(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Problem>) -> bool> {
+    let (new, not_seen, seen, tags) = filter_help(tags, qq).await?;
+
+    let filter = move |problem: &&Arc<Problem>| -> bool {
+        // filter by tags
+        if !tags.is_empty()
+            && !tags
+                .iter()
+                .all(|tag| problem.tags.contains(&tag.to_string()))
+        {
+            return false;
+        }
+        // filter by special tags
+        if new && problem.contest_id <= 1000 {
+            return false;
+        }
+        if not_seen && seen.contains(&(problem.contest_id, problem.index.clone())) {
+            return false;
+        }
+        true
+    };
+
+    Ok(filter)
+}
+
+/// 过滤掉 new 和 not-seen 标签
+/// 以及不合法的标签
+/// 返回值：
+/// - new: 是否有 new 标签
+/// - not_seen: 是否有 not-seen 标签
+/// - seen: 已经提交过的题目
+/// - tags: 过滤后的标签
+async fn filter_help<'a>(
+    tags: &[&'a str],
+    qq: i64,
+) -> Result<(bool, bool, HashSet<(i64, String)>, Vec<&'a str>)> {
     let mut new = false;
     let mut not_seen = false;
 
@@ -187,7 +180,7 @@ async fn filter_by_pos(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Proble
                 true
             }
         })
-        .map(|tag| tag.replace("_", " "))
+        .cloned()
         .collect::<Vec<_>>();
 
     let seen = if not_seen {
@@ -203,11 +196,11 @@ async fn filter_by_pos(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Proble
             .filter(|submission| {
                 submission.get("verdict") == Some(&Value::String("OK".to_string()))
             })
-            .map(|submission| {
-                let problem = submission["problem"].as_object().unwrap();
-                let contest_id = problem["contestId"].as_i64().unwrap();
-                let index = problem["index"].as_str().unwrap().to_string();
-                (contest_id, index)
+            .filter_map(|submission| {
+                let problem = submission.get("problem")?.as_object()?;
+                let contest_id = problem.get("contestId")?.as_i64()?;
+                let index = problem.get("index")?.as_str()?.to_string();
+                Some((contest_id, index))
             })
             .collect::<HashSet<_>>();
         seen
@@ -215,26 +208,7 @@ async fn filter_by_pos(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Proble
         HashSet::new()
     };
 
-    let filter = move |problem: &&Arc<Problem>| -> bool {
-        // filter by tags
-        if !tags.is_empty()
-            && !tags
-                .iter()
-                .all(|tag| problem.tags.contains(&tag.to_string()))
-        {
-            return false;
-        }
-        // filter by special tags
-        if new && problem.contest_id <= 1000 {
-            return false;
-        }
-        if not_seen && !seen.contains(&(problem.contest_id, problem.index.clone())) {
-            return false;
-        }
-        true
-    };
-
-    Ok(filter)
+    Ok((new, not_seen, seen, tags))
 }
 
 fn check_tags(tags: &[String]) -> Result<()> {
@@ -296,12 +270,12 @@ pub async fn get_last_submission(cf_id: &str) -> Option<Value> {
     .ok()?;
 
     let body = res.json::<Value>().await.ok()?;
-    let status = body["status"].as_str()?;
+    let status = body.get("status")?.as_str()?;
     if status != "OK" {
         return None;
     }
 
-    let submissions = match &body["result"] {
+    let submissions = match body.get("result")? {
         Value::Array(submissions) => submissions,
         _ => return None,
     };
@@ -334,7 +308,7 @@ async fn fetch_problems() -> Result<ProblemSet, Error> {
             .iter()
             .filter_map(Problem::from_value)
             .map(Arc::new)
-            .collect::<Vec<Arc<Problem>>>(),
+            .collect::<Vec<_>>(),
         _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
     };
 
@@ -368,7 +342,10 @@ pub async fn get_daily_problem() -> Result<Arc<Problem>, Error> {
             let problem = match get_problems()
                 .await?
                 .iter()
-                .filter(|problem| problem.rating <= MAX_DAILY_RATING)
+                .filter(|problem| {
+                    problem.rating <= MAX_DAILY_RATING
+                        && !problem.tags.iter().any(|tag| tag == "*special")
+                })
                 .choose(&mut rand::thread_rng())
                 .cloned()
             {

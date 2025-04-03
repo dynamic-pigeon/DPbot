@@ -39,28 +39,24 @@ pub async fn update_user(user: &User) -> Result<()> {
     .await
 }
 
-pub async fn update_two_user(user1: &User, user2: &User) -> Result<()> {
+pub async fn update_two_user_rating(user1: &User, user2: &User) -> Result<()> {
     with_commit(async |trans| {
         let _ = sqlx::query(
             r#"
-            UPDATE user SET rating = ?, cf_id = ?, daily_score = ? WHERE qq = ?
+            UPDATE user SET rating = ? WHERE qq = ?
             "#,
         )
         .bind(user1.rating)
-        .bind(&user1.cf_id)
-        .bind(user1.daily_score)
         .bind(user1.qq)
         .execute(&mut **trans)
         .await?;
 
         let _ = sqlx::query(
             r#"
-            UPDATE user SET rating = ?, cf_id = ?, daily_score = ? WHERE qq = ?
+            UPDATE user SET rating = ? WHERE qq = ?
             "#,
         )
         .bind(user2.rating)
-        .bind(&user2.cf_id)
-        .bind(user2.daily_score)
         .bind(user2.qq)
         .execute(&mut **trans)
         .await?;
