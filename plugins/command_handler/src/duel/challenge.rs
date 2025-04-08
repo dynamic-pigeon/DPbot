@@ -1,73 +1,16 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use kovi::chrono::{self, DateTime};
 use kovi::log::debug;
-use kovi::tokio::sync::RwLock;
+use kovi::serde_json;
 use rand::seq::SliceRandom;
+use sqlx::{Decode, Encode, Sqlite, Type};
 
 use crate::duel::problem::get_problems_by;
 use crate::sql;
 
 use super::problem::{Problem, get_last_submission};
-
-static CHALLENGES: LazyLock<RwLock<Vec<Challenge>>> = LazyLock::new(|| RwLock::new(Vec::new()));
-
-pub async fn add_challenge(challenge: Challenge) {
-    let mut challenges = CHALLENGES.write().await;
-    challenges.push(challenge);
-}
-
-pub async fn get_challenge(user_id: i64) -> Option<Challenge> {
-    let challenges = CHALLENGES.read().await;
-    challenges
-        .iter()
-        .find(|challenge| challenge.user1 == user_id || challenge.user2 == user_id)
-        .cloned()
-}
-
-pub async fn get_challenge_by_user2(user_id: i64) -> Option<Challenge> {
-    let challenges = CHALLENGES.read().await;
-    challenges
-        .iter()
-        .find(|challenge| challenge.user2 == user_id)
-        .cloned()
-}
-
-pub async fn get_challenge_by_user1(user_id: i64) -> Option<Challenge> {
-    let challenges = CHALLENGES.read().await;
-    challenges
-        .iter()
-        .find(|challenge| challenge.user1 == user_id)
-        .cloned()
-}
-
-pub async fn remove_challenge(user1: i64, user2: i64) -> Option<Challenge> {
-    let mut challenges = CHALLENGES.write().await;
-    let index = challenges.iter().position(|challenge| {
-        (challenge.user1 == user1 && challenge.user2 == user2)
-            || (challenge.user1 == user2 && challenge.user2 == user1)
-    })?;
-    Some(challenges.remove(index))
-}
-
-pub async fn remove_challenge_by_user(user1: i64) -> Option<Challenge> {
-    let mut challenges = CHALLENGES.write().await;
-    let index = challenges
-        .iter()
-        .position(|challenge| challenge.user1 == user1 || challenge.user2 == user1)?;
-    Some(challenges.remove(index))
-}
-
-pub async fn user_inside(user_id: i64) -> bool {
-    let challenges = CHALLENGES.read().await;
-    challenges
-        .iter()
-        .any(|challenge| challenge.user1 == user_id || challenge.user2 == user_id)
-        || sql::duel::challenge::get_chall_ongoing_by_user(user_id)
-            .await
-            .is_ok()
-}
 
 #[derive(Clone)]
 pub struct Challenge {
@@ -77,9 +20,53 @@ pub struct Challenge {
     pub rating: i64,
     pub tags: Vec<String>,
     pub problem: Option<Problem>,
-    pub result: Option<i64>,
-    pub started: i64,
-    pub changed: Option<i64>,
+    pub status: ChallengeStatus,
+}
+
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+pub enum ChallengeStatus {
+    Ongoing,
+    Finished(i64),
+    Panding,
+    ChangeProblem(i64),
+}
+
+impl Type<Sqlite> for ChallengeStatus {
+    fn type_info() -> sqlx::sqlite::SqliteTypeInfo {
+        <i64 as Type<Sqlite>>::type_info()
+    }
+}
+
+impl<'q> Encode<'q, Sqlite> for ChallengeStatus {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <Sqlite as sqlx::Database>::ArgumentBuffer<'q>,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        match self {
+            ChallengeStatus::Panding => <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&1i64, buf),
+            ChallengeStatus::Ongoing => <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&2i64, buf),
+            ChallengeStatus::Finished(res) => {
+                <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&-res, buf)
+            }
+            ChallengeStatus::ChangeProblem(id) => {
+                <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&id, buf)
+            }
+        }
+    }
+}
+
+impl<'r> Decode<'r, Sqlite> for ChallengeStatus {
+    fn decode(
+        value: <Sqlite as sqlx::Database>::ValueRef<'r>,
+    ) -> std::result::Result<Self, sqlx::error::BoxDynError> {
+        let num: i64 = <i64 as sqlx::Decode<Sqlite>>::decode(value)?;
+        match num {
+            1 => Ok(ChallengeStatus::Panding),
+            2 => Ok(ChallengeStatus::Ongoing),
+            num if num > 0 => Ok(ChallengeStatus::ChangeProblem(num)),
+            num => Ok(ChallengeStatus::Finished(-num)),
+        }
+    }
 }
 
 impl Challenge {
@@ -90,8 +77,7 @@ impl Challenge {
         tags: Vec<String>,
         rating: i64,
         problem: Option<Problem>,
-        result: Option<i64>,
-        started: i64,
+        status: ChallengeStatus,
     ) -> Self {
         Self {
             user1,
@@ -100,10 +86,12 @@ impl Challenge {
             rating,
             tags,
             problem,
-            result,
-            started,
-            changed: None,
+            status,
         }
+    }
+
+    pub fn started(&self) -> bool {
+        !matches!(self.status, ChallengeStatus::Panding)
     }
 
     pub async fn start(&mut self) -> Result<Arc<Problem>> {
@@ -112,19 +100,20 @@ impl Challenge {
             .choose(&mut rand::thread_rng())
             .ok_or_else(|| anyhow::anyhow!("没有找到题目"))?;
         self.problem = Some(problem.as_ref().clone());
-        self.started = 1;
-        sql::duel::challenge::add_challenge(self).await?;
+        self.status = ChallengeStatus::Ongoing;
+        sql::duel::challenge::change_status(self).await?;
+        sql::duel::challenge::change_problem(self).await?;
         Ok(Arc::clone(problem))
     }
 
     pub async fn give_up(&mut self, user_id: i64) -> Result<()> {
-        if user_id == self.user1 {
-            self.result = Some(1);
+        let status = if user_id == self.user1 {
+            ChallengeStatus::Finished(1)
         } else if user_id == self.user2 {
-            self.result = Some(0);
+            ChallengeStatus::Finished(0)
         } else {
             return Err(anyhow::anyhow!("你不是这场对局的参与者"));
-        }
+        };
 
         let mut user1 = sql::duel::user::get_user(self.user1).await?;
         let mut user2 = sql::duel::user::get_user(self.user2).await?;
@@ -132,14 +121,17 @@ impl Challenge {
         let user1_rating = user1.rating;
         let user2_rating = user2.rating;
 
-        let (new_user1_rating, new_user2_rating) =
-            calculate_elo_rating(user1_rating, user2_rating, self.result.unwrap() == 0);
+        let (new_user1_rating, new_user2_rating) = calculate_elo_rating(
+            user1_rating,
+            user2_rating,
+            self.status == ChallengeStatus::Finished(0),
+        );
 
         user1.rating = new_user1_rating;
         user2.rating = new_user2_rating;
 
         sql::duel::user::update_two_user_rating(&user1, &user2).await?;
-        sql::duel::challenge::change_result(self).await?;
+        self.change_status(status).await?;
 
         Ok(())
     }
@@ -164,8 +156,7 @@ impl Challenge {
         }
 
         let result = user1_score > user2_score;
-        self.result = Some(if result { 0 } else { 1 });
-        sql::duel::challenge::change_result(self).await?;
+        let status = ChallengeStatus::Finished(if result { 0 } else { 1 });
 
         let user1_rating = user1.rating;
         let user2_rating = user2.rating;
@@ -180,6 +171,7 @@ impl Challenge {
         user2.rating = new_user2_rating;
 
         sql::duel::user::update_two_user_rating(&user1, &user2).await?;
+        self.change_status(status).await?;
 
         Ok(())
     }
@@ -188,10 +180,14 @@ impl Challenge {
     /// @return (是否通过, -提交时间)
     fn calc_score(&self, submission: kovi::serde_json::Value) -> Result<(bool, i64)> {
         debug!("Submission: {:#?}", submission);
-        let problem = submission
-            .get("problem")
-            .and_then(crate::duel::problem::Problem::from_value)
-            .unwrap_or_else(|| Problem::new(0, "".to_string(), 0, vec![]));
+        let mut submission = match submission {
+            serde_json::Value::Object(map) => map,
+            _ => Err(anyhow::anyhow!("获取提交记录失败"))?,
+        };
+        let problem: Problem = submission
+            .remove("problem")
+            .and_then(|p| serde_json::from_value(p).ok())
+            .ok_or(anyhow::anyhow!("获取题目信息失败"))?;
 
         if problem.contest_id != self.problem.as_ref().unwrap().contest_id
             || problem.index != self.problem.as_ref().unwrap().index
@@ -212,6 +208,10 @@ impl Challenge {
         Ok((pass, -time))
     }
 
+    pub async fn change_status(&mut self, status: ChallengeStatus) -> Result<()> {
+        self.status = status;
+        sql::duel::challenge::change_status(self).await
+    }
     pub async fn change(&mut self) -> Result<Arc<Problem>> {
         let problems = get_problems_by(&self.tags, self.rating, self.user1).await?;
         let problem = problems
@@ -250,4 +250,48 @@ fn calculate_elo_rating(rating1: i64, rating2: i64, result: bool) -> (i64, i64) 
         adjusted_new_rating1.round() as i64,
         adjusted_new_rating2.round() as i64,
     )
+}
+
+pub async fn user_in_ongoing_challenge(user_id: i64) -> bool {
+    get_ongoing_challenge_by_user(user_id).await.is_ok()
+}
+
+pub async fn get_ongoing_challenge_by_user(user_id: i64) -> Result<Challenge> {
+    sql::duel::challenge::get_chall_ongoing_by_user(user_id).await
+}
+
+pub async fn add_challenge(challenge: &Challenge) -> Result<()> {
+    sql::duel::challenge::add_challenge(challenge).await
+}
+
+pub async fn get_challenge_by_user2(user_id: i64) -> Result<Challenge> {
+    sql::duel::challenge::get_chall_ongoing_by_user(user_id)
+        .await
+        .and_then(|c| {
+            if c.user2 == user_id {
+                Ok(c)
+            } else {
+                Err(anyhow::anyhow!("没有找到对局"))
+            }
+        })
+}
+
+pub async fn get_challenge_by_user1(user_id: i64) -> Result<Challenge> {
+    sql::duel::challenge::get_chall_ongoing_by_user(user_id)
+        .await
+        .and_then(|c| {
+            if c.user2 == user_id {
+                Ok(c)
+            } else {
+                Err(anyhow::anyhow!("没有找到对局"))
+            }
+        })
+}
+
+pub async fn get_challenge(user1: i64, user2: i64) -> Result<Challenge> {
+    sql::duel::challenge::get_chall_ongoing_by_2user(user1, user2).await
+}
+
+pub async fn remove_challenge(challenge: &Challenge) -> Result<()> {
+    sql::duel::challenge::remove_challenge(challenge).await
 }

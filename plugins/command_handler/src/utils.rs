@@ -19,6 +19,7 @@ pub fn user_id_or_text(text: &str) -> IdOrText {
     }
 }
 
+#[allow(dead_code)]
 pub fn user_id_or_text_str(text: &str) -> &str {
     if let Some(user_id) = text.strip_prefix("@") {
         user_id
@@ -28,19 +29,13 @@ pub fn user_id_or_text_str(text: &str) -> &str {
 }
 
 pub fn mes_to_text(msg: &Message) -> String {
-    let mut text = String::new();
-    for seg in msg.iter() {
-        match seg.type_.as_str() {
-            "text" => {
-                text.push_str(seg.data["text"].as_str().unwrap());
-            }
-            "at" => {
-                text.push_str(&format!("@{}", seg.data["qq"].as_str().unwrap()));
-            }
-            _ => {}
-        }
-    }
-    text
+    msg.iter()
+        .filter_map(|seg| match seg.type_.as_str() {
+            "text" => Some(seg.data["text"].as_str().unwrap().to_string()),
+            "at" => Some(format!("@{}", seg.data["qq"].as_str().unwrap())),
+            _ => None,
+        })
+        .collect::<String>()
 }
 
 pub fn today_utc() -> chrono::DateTime<Utc> {

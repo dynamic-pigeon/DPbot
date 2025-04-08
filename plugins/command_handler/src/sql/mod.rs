@@ -2,6 +2,7 @@ use std::sync::OnceLock;
 
 use anyhow::Result;
 use kovi::log::debug;
+use sqlx::pool;
 
 pub(crate) mod duel;
 
@@ -36,7 +37,7 @@ pub async fn init(path: &str) -> Result<()> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS duel
-        (user1 INTEGER, user2 INTEGER, time TEXT, tags TEXT, rating INTEGER, problem TEXT, result INTEGER)
+        (user1 INTEGER, user2 INTEGER, time TEXT, tags TEXT, rating INTEGER, problem TEXT, status TEXT)
         "#,
     )
     .execute(sql)

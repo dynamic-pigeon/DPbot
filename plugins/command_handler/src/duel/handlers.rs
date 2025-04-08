@@ -1,12 +1,17 @@
-use kovi::{MsgEvent, bot::message::Segment, log::debug, serde_json::json};
+use kovi::{
+    MsgEvent,
+    bot::message::Segment,
+    log::{debug, info},
+    serde_json::json,
+};
 use rand::seq::SliceRandom;
 
 use crate::{
     sql,
-    utils::{IdOrText, today_utc, user_id_or_text, user_id_or_text_str},
+    utils::{IdOrText, today_utc, user_id_or_text},
 };
 
-use super::challenge::Challenge;
+use super::challenge::{Challenge, ChallengeStatus};
 
 pub async fn daily_ranklist(event: &MsgEvent) {
     let ranklist = match sql::duel::user::get_top_20_daily().await {
@@ -122,9 +127,9 @@ pub async fn give_up(event: &MsgEvent) {
 
     match challenge.give_up(event.user_id).await {
         Ok(_) => {
-            let (winner, loser) = match challenge.result {
-                Some(0) => (challenge.user1, challenge.user2),
-                Some(1) => {
+            let (winner, loser) = match challenge.status {
+                ChallengeStatus::Finished(0) => (challenge.user1, challenge.user2),
+                ChallengeStatus::Finished(1) => {
                     std::mem::swap(&mut user1, &mut user2);
                     (challenge.user2, challenge.user1)
                 }
@@ -147,11 +152,10 @@ pub async fn give_up(event: &MsgEvent) {
                 winner.rating,
                 user2.cf_id.unwrap(),
                 user2.rating,
-                loser.rating - user2.rating,
+                user2.rating - loser.rating,
                 loser.rating
             );
             event.reply(result);
-            let _ = super::challenge::remove_challenge(challenge.user1, challenge.user2).await;
         }
         Err(e) => {
             event.reply(e.to_string());
@@ -258,9 +262,9 @@ pub async fn judge(event: &MsgEvent) {
 
     match challenge.judge().await {
         Ok(_) => {
-            let (winner, loser) = match challenge.result {
-                Some(0) => (challenge.user1, challenge.user2),
-                Some(1) => {
+            let (winner, loser) = match challenge.status {
+                ChallengeStatus::Finished(0) => (challenge.user1, challenge.user2),
+                ChallengeStatus::Finished(1) => {
                     std::mem::swap(&mut user1, &mut user2);
                     (challenge.user2, challenge.user1)
                 }
@@ -287,7 +291,6 @@ pub async fn judge(event: &MsgEvent) {
                 loser.rating
             );
             event.reply(result);
-            let _ = super::challenge::remove_challenge(challenge.user1, challenge.user2).await;
         }
         Err(e) => {
             event.reply(e.to_string());
@@ -298,13 +301,17 @@ pub async fn judge(event: &MsgEvent) {
 pub async fn change(event: &MsgEvent) {
     let user_id = event.user_id;
 
-    match super::challenge::remove_challenge_by_user(user_id).await {
-        Some(mut challenge) => {
-            if challenge.started == 0 {
+    match super::challenge::get_ongoing_challenge_by_user(user_id).await {
+        Ok(mut challenge) => match challenge.status {
+            ChallengeStatus::Panding => {
                 event.reply("你还没有开始决斗");
-            } else if challenge.changed == Some(user_id) {
-                event.reply("你已经发起了换题请求，请等待对手确认");
-            } else {
+                return;
+            }
+            ChallengeStatus::ChangeProblem(user) if user == user_id => {
+                event.reply("你已经发起了换题请求");
+                return;
+            }
+            _ => {
                 let problem = match challenge.change().await {
                     Ok(problem) => problem,
                     Err(e) => {
@@ -313,7 +320,7 @@ pub async fn change(event: &MsgEvent) {
                     }
                 };
 
-                challenge.changed = None;
+                challenge.status = ChallengeStatus::Ongoing;
 
                 let problem = format!(
                     "题目链接：https://codeforces.com/problemset/problem/{}/{}",
@@ -327,11 +334,10 @@ pub async fn change(event: &MsgEvent) {
                     .unwrap();
                 return;
             }
-
-            super::challenge::add_challenge(challenge).await;
-        }
-        None => {
-            let challenge = match sql::duel::challenge::get_chall_ongoing_by_user(user_id).await {
+        },
+        _ => {
+            let mut challenge = match sql::duel::challenge::get_chall_ongoing_by_user(user_id).await
+            {
                 Ok(challenge) => challenge,
                 Err(_) => {
                     event.reply("你没有正在进行的决斗");
@@ -347,31 +353,34 @@ pub async fn change(event: &MsgEvent) {
                 }
             };
 
+            challenge
+                .change_status(ChallengeStatus::ChangeProblem(user_id))
+                .await
+                .unwrap();
+
             event.reply(format!(
                 "{} 发起了换题请求，请输入 /duel change 确认",
                 user.cf_id.unwrap()
             ));
-
-            super::challenge::add_challenge(challenge).await;
         }
     }
 }
 
 pub async fn decline(event: &MsgEvent) {
     let user2 = event.user_id;
-    let user1 = match crate::duel::challenge::get_challenge_by_user2(user2).await {
-        Some(challenge) if challenge.started == 1 => {
+    let chall = match crate::duel::challenge::get_challenge_by_user2(user2).await {
+        Ok(challenge) if challenge.status != ChallengeStatus::Panding => {
             event.reply("比赛已经开始了");
             return;
         }
-        Some(challenge) => challenge.user1,
-        None => {
+        Ok(challenge) => challenge,
+        _ => {
             event.reply("你没有收到挑战");
             return;
         }
     };
 
-    let _challenge = crate::duel::challenge::remove_challenge(user1, user2)
+    crate::duel::challenge::remove_challenge(&chall)
         .await
         .unwrap();
 
@@ -380,19 +389,19 @@ pub async fn decline(event: &MsgEvent) {
 
 pub async fn cancel(event: &MsgEvent) {
     let user1 = event.user_id;
-    let user2 = match crate::duel::challenge::get_challenge_by_user1(user1).await {
-        Some(challenge) if challenge.started == 1 => {
+    let chall = match crate::duel::challenge::get_challenge_by_user1(user1).await {
+        Ok(challenge) if challenge.status != ChallengeStatus::Panding => {
             event.reply("比赛已经开始了");
             return;
         }
-        Some(challenge) => challenge.user2,
-        None => {
+        Ok(challenge) => challenge,
+        _ => {
             event.reply("你没有发起挑战");
             return;
         }
     };
 
-    let _challenge = crate::duel::challenge::remove_challenge(user1, user2)
+    crate::duel::challenge::remove_challenge(&chall)
         .await
         .unwrap();
 
@@ -402,18 +411,18 @@ pub async fn cancel(event: &MsgEvent) {
 pub async fn accept(event: &MsgEvent) {
     let user2 = event.user_id;
     let user1 = match crate::duel::challenge::get_challenge_by_user2(user2).await {
-        Some(challenge) if challenge.started == 1 => {
+        Ok(challenge) if challenge.status != ChallengeStatus::Panding => {
             event.reply("比赛已经开始了");
             return;
         }
-        Some(challenge) => challenge.user1,
-        None => {
+        Ok(challenge) => challenge.user1,
+        _ => {
             event.reply("你没有收到挑战");
             return;
         }
     };
 
-    let mut challenge = crate::duel::challenge::remove_challenge(user1, user2)
+    let mut challenge = crate::duel::challenge::get_challenge(user1, user2)
         .await
         .unwrap();
 
@@ -467,7 +476,9 @@ pub async fn challenge(event: &MsgEvent, args: &[String]) {
         }
     };
 
-    if super::challenge::user_inside(user1).await || super::challenge::user_inside(user2).await {
+    if super::challenge::user_in_ongoing_challenge(user1).await
+        || super::challenge::user_in_ongoing_challenge(user2).await
+    {
         event.reply("你或对方正在决斗中");
         return;
     }
@@ -486,9 +497,19 @@ pub async fn challenge(event: &MsgEvent, args: &[String]) {
     };
     let time = today_utc();
 
-    let challenge = Challenge::new(user1, user2, time, tags, rating, None, None, 0);
+    let challenge = Challenge::new(
+        user1,
+        user2,
+        time,
+        tags,
+        rating,
+        None,
+        super::challenge::ChallengeStatus::Panding,
+    );
 
-    crate::duel::challenge::add_challenge(challenge).await;
+    crate::duel::challenge::add_challenge(&challenge)
+        .await
+        .unwrap();
 
     let msg = format!(
         "{} 向 {} 发起了挑战，请输入 /duel accept 接受挑战，或 /duel decline 拒绝挑战",

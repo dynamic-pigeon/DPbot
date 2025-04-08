@@ -3,7 +3,7 @@ use std::sync::{Arc, LazyLock};
 
 use anyhow::{Error, Result};
 use kovi::log::info;
-use kovi::serde_json::Value;
+use kovi::serde_json::{self, Value};
 use kovi::tokio::sync::{Mutex, RwLock};
 use rand::seq::{IteratorRandom, SliceRandom};
 
@@ -20,6 +20,7 @@ static DAILY_LOC: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Problem {
+    #[serde(rename = "contestId")]
     pub contest_id: i64,
     pub index: String,
     pub rating: i64,
@@ -27,24 +28,6 @@ pub struct Problem {
 }
 
 impl Problem {
-    pub fn from_value(value: &Value) -> Option<Self> {
-        let contest_id = value["contestId"].as_i64()?;
-        let index = value["index"].as_str()?.to_string();
-        let rating = value["rating"].as_i64()?;
-        let tags = value["tags"]
-            .as_array()?
-            .iter()
-            .map(|tag| tag.as_str().unwrap().to_string())
-            .collect();
-
-        Some(Self {
-            contest_id,
-            index,
-            rating,
-            tags,
-        })
-    }
-
     pub fn new(contest_id: i64, index: String, rating: i64, tags: Vec<String>) -> Self {
         Self {
             contest_id,
@@ -303,12 +286,27 @@ async fn fetch_problems() -> Result<ProblemSet, Error> {
         return Err(anyhow::anyhow!("Failed to fetch problems"));
     };
 
-    let problems = match &body.get("result").and_then(|v| v.get("problems")) {
-        Some(Value::Array(prblems)) => prblems
-            .iter()
-            .filter_map(Problem::from_value)
-            .map(Arc::new)
-            .collect::<Vec<_>>(),
+    let problems = match body {
+        Value::Object(mut map) => {
+            let problems = map.remove("result");
+            match problems {
+                Some(Value::Object(mut map)) => {
+                    let problems = map.remove("problems");
+                    match problems {
+                        Some(Value::Array(problems)) => problems
+                            .into_iter()
+                            .map(serde_json::from_value)
+                            .filter_map(Result::ok)
+                            .map(Arc::new)
+                            .collect::<Vec<_>>(),
+                        _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
+                    }
+                }
+                _ => {
+                    return Err(anyhow::anyhow!("Failed to fetch problems"));
+                }
+            }
+        }
         _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
     };
 
