@@ -91,19 +91,13 @@ async fn main() {
                 Ok(v) => v,
                 Err(e) => {
                     error!("{}", e);
-                    match gen_img(&md, &data_path).await {
-                        Ok(v) => v,
-                        Err(e) => {
-                            error!("{}", e);
-                            event.reply("生成图片失败");
-                            // send text only
-                            let text_seg = Segment::new("text", json!({ "text": md }));
-                            let seg = Segment::new("node", json!({ "content": [text_seg] }));
-                            let msg = Message::from(vec![seg]);
-                            event.reply(msg);
-                            return;
-                        }
-                    }
+                    event.reply("生成图片失败");
+                    // send text only
+                    let text_seg = Segment::new("text", json!({ "text": md }));
+                    let seg = Segment::new("node", json!({ "content": [text_seg] }));
+                    let msg = Message::from(vec![seg]);
+                    event.reply(msg);
+                    return;
                 }
             };
 
@@ -140,7 +134,7 @@ async fn gen_img(md: &str, data_path: &PathBuf) -> Result<Vec<u8>> {
 
     std::fs::write(&file_path, html).unwrap();
 
-    let png_data = match screenshot_lock.screenshot(&file_path) {
+    let png_data = match screenshot_lock.screenshot(&file_path).await {
         Ok(v) => v,
         Err(err) => {
             error!("{}", err);

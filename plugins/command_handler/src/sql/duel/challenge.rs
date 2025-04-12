@@ -19,7 +19,7 @@ pub async fn get_ongoing_challenges() -> Result<Vec<Challenge>> {
         ChallengeStatus,
     )> = sqlx::query_as(
         r#"
-        SELECT * FROM duel WHERE result IS NULL
+        SELECT * FROM duel WHERE status > 0
         "#,
     )
     .fetch_all(sql)

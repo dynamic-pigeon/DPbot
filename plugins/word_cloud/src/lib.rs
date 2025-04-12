@@ -12,6 +12,8 @@ use kovi::{
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose::STANDARD};
 
+mod ocr;
+
 static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
 static LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
 

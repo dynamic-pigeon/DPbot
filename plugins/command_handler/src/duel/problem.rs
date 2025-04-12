@@ -36,6 +36,10 @@ impl Problem {
             tags,
         }
     }
+
+    pub fn same_problem(&self, other: &Self) -> bool {
+        self.contest_id == other.contest_id && self.index == other.index
+    }
 }
 
 pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Vec<Arc<Problem>>> {

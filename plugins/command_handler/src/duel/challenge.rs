@@ -189,9 +189,7 @@ impl Challenge {
             .and_then(|p| serde_json::from_value(p).ok())
             .ok_or(anyhow::anyhow!("获取题目信息失败"))?;
 
-        if problem.contest_id != self.problem.as_ref().unwrap().contest_id
-            || problem.index != self.problem.as_ref().unwrap().index
-        {
+        if problem.same_problem(self.problem.as_ref().unwrap()) {
             return Ok((false, 0));
         }
 

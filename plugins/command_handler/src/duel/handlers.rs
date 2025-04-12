@@ -2,11 +2,12 @@ use kovi::{
     MsgEvent,
     bot::message::Segment,
     log::{debug, info},
-    serde_json::json,
+    serde_json::{self, json},
 };
 use rand::seq::SliceRandom;
 
 use crate::{
+    duel::problem::Problem,
     sql,
     utils::{IdOrText, today_utc, user_id_or_text},
 };
@@ -197,21 +198,27 @@ pub async fn daily_finish(event: &MsgEvent) {
         }
     };
 
-    let problem = match submission.get("problem").and_then(|v| v.as_object()) {
-        Some(problem) => problem,
-        None => {
+    debug!("Submission: {:#?}", submission);
+
+    let (submission, problem) = match submission {
+        serde_json::Value::Object(mut map) => {
+            let problem = match map.remove("problem") {
+                Some(problem) => problem,
+                _ => {
+                    event.reply("未知错误");
+                    return;
+                }
+            };
+            let problem: Problem = serde_json::from_value(problem).unwrap();
+            (map, problem)
+        }
+        _ => {
             event.reply("未知错误");
             return;
         }
     };
 
-    debug!("Submission: {:#?}", submission);
-
-    let contest_id = problem.get("contestId").and_then(|v| v.as_i64());
-    let index = problem.get("index").and_then(|v| v.as_str());
-
-    if contest_id != Some(daily_problem.contest_id)
-        || index != Some(&daily_problem.index)
+    if problem.same_problem(&daily_problem)
         || submission.get("verdict").and_then(|v| v.as_str()) != Some("OK")
     {
         event.reply("未发现通过记录");
