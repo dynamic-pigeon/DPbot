@@ -18,17 +18,17 @@ static PROBLEMS: LazyLock<RwLock<Option<Arc<ProblemSet>>>> = LazyLock::new(|| Rw
 
 static DAILY_LOC: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct Problem {
     #[serde(rename = "contestId")]
     pub contest_id: i64,
     pub index: String,
-    pub rating: i64,
+    pub rating: Option<i64>,
     pub tags: Vec<String>,
 }
 
 impl Problem {
-    pub fn new(contest_id: i64, index: String, rating: i64, tags: Vec<String>) -> Self {
+    pub fn new(contest_id: i64, index: String, rating: Option<i64>, tags: Vec<String>) -> Self {
         Self {
             contest_id,
             index,
@@ -42,7 +42,7 @@ impl Problem {
     }
 }
 
-pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Vec<Arc<Problem>>> {
+pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<ProblemSet> {
     if !(800..=3500).contains(&rating) || rating % 100 != 0 {
         return Err(anyhow::anyhow!("rating 应该是 800 到 3500 之间的整数"));
     }
@@ -83,7 +83,7 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Ve
         .iter()
         .filter(filter_by_nag(&nag_tags, qq).await?)
         .filter(filter_by_pos(&pos_tags, qq).await?)
-        .filter(|problem| problem.rating == rating)
+        .filter(|problem| problem.rating == Some(rating))
         .cloned()
         .collect::<Vec<_>>();
 
@@ -345,7 +345,7 @@ pub async fn get_daily_problem() -> Result<Arc<Problem>, Error> {
                 .await?
                 .iter()
                 .filter(|problem| {
-                    problem.rating <= MAX_DAILY_RATING
+                    problem.rating.unwrap_or(4000) <= MAX_DAILY_RATING
                         && !problem.tags.iter().any(|tag| tag == "*special")
                 })
                 .choose(&mut rand::thread_rng())

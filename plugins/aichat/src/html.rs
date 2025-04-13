@@ -1,16 +1,27 @@
-pub static HTML_START_NEXT_IS_MD_CSS: &str = r#"<!doctype html>
+static KATEX_MIN_CSS: &str = include_str!("html/katex.min.css");
+
+use std::sync::LazyLock;
+
+pub static HTML_START_NEXT_IS_MD_CSS: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        r#"<!doctype html>
 <html>
 <head>
 <meta charset="UTF-8">
 <!-- KaTeX 核心样式 -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+<style>
+{}
+</style>
 <!-- 自定义数学公式样式 -->
 <style>
-    .math { margin: 1em 0; }
-    .katex { font-size: 1.1em; }
+    .math {{ margin: 1em 0; }}
+    .katex {{ font-size: 1.1em; }}
 </style>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>"#;
+<style>"#,
+        KATEX_MIN_CSS
+    )
+});
 
 pub static HTML_2_NEXT_IS_HIGHLIGHT_CSS: &str = r#"
 .markdown-body {

@@ -45,7 +45,7 @@ loggers:
     appenders:
       - stdout
   command_handler:
-    level: info
+    level: debug
     appenders:
       - stdout
   kovi:

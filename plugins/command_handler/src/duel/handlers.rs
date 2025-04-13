@@ -218,21 +218,22 @@ pub async fn daily_finish(event: &MsgEvent) {
         }
     };
 
-    if problem.same_problem(&daily_problem)
+    if !problem.same_problem(&daily_problem)
         || submission.get("verdict").and_then(|v| v.as_str()) != Some("OK")
     {
         event.reply("未发现通过记录");
         return;
     }
 
-    user.daily_score += daily_problem.rating;
+    user.daily_score += daily_problem.rating.unwrap();
     user.last_daily = now;
 
     match sql::duel::user::update_user(&user).await {
         Ok(_) => {
             event.reply(format!(
                 "你今天完成了每日任务，获得了 {} 分\n你现在的总分为 {}",
-                daily_problem.rating, user.daily_score
+                daily_problem.rating.unwrap(),
+                user.daily_score
             ));
         }
         Err(_) => {

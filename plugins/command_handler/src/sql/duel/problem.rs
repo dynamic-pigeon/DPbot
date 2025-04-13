@@ -38,7 +38,7 @@ pub async fn get_daily_problem() -> Result<Problem> {
         .fetch_one(&mut **trans)
         .await?;
 
-        let problem = Problem::new(res.0, res.1, res.2, vec![]);
+        let problem = Problem::new(res.0, res.1, Some(res.2), vec![]);
 
         Ok(problem)
     })
