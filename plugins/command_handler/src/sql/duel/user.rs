@@ -7,7 +7,7 @@ use anyhow::{Ok, Result};
 pub async fn get_user(qq: i64) -> Result<User> {
     let sql = POOL.get().unwrap();
 
-    let res: (i64, i64, Option<String>, i64, String) = sqlx::query_as(
+    let res: User = sqlx::query_as(
         r#"
         SELECT * FROM user WHERE qq = ?
         "#,
@@ -16,7 +16,7 @@ pub async fn get_user(qq: i64) -> Result<User> {
     .fetch_one(sql)
     .await?;
 
-    Ok(User::new(res.0, res.1, res.2, res.3, res.4))
+    Ok(res)
 }
 
 pub async fn update_user(user: &User) -> Result<()> {
@@ -85,7 +85,7 @@ pub async fn add_user(qq: i64) -> Result<User> {
 pub async fn get_top_20_daily() -> Result<Vec<User>> {
     let sql = POOL.get().unwrap();
 
-    let res: Vec<(i64, i64, Option<String>, i64, String)> = sqlx::query_as(
+    let users: Vec<User> = sqlx::query_as(
         r#"
         SELECT * FROM user ORDER BY daily_score DESC LIMIT 20
         "#,
@@ -93,18 +93,13 @@ pub async fn get_top_20_daily() -> Result<Vec<User>> {
     .fetch_all(sql)
     .await?;
 
-    Ok(res
-        .into_iter()
-        .map(|(qq, rating, cf_id, daily_score, last_daily)| {
-            User::new(qq, rating, cf_id, daily_score, last_daily)
-        })
-        .collect())
+    Ok(users)
 }
 
 pub async fn get_top_20_ranklist() -> Result<Vec<User>> {
     let sql = POOL.get().unwrap();
 
-    let res: Vec<(i64, i64, Option<String>, i64, String)> = sqlx::query_as(
+    let users: Vec<User> = sqlx::query_as(
         r#"
         SELECT * FROM user ORDER BY rating DESC LIMIT 20
         "#,
@@ -112,10 +107,5 @@ pub async fn get_top_20_ranklist() -> Result<Vec<User>> {
     .fetch_all(sql)
     .await?;
 
-    Ok(res
-        .into_iter()
-        .map(|(qq, rating, cf_id, daily_score, last_daily)| {
-            User::new(qq, rating, cf_id, daily_score, last_daily)
-        })
-        .collect())
+    Ok(users)
 }

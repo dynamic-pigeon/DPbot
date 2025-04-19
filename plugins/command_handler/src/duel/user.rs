@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::LazyLock};
 use crate::{duel::problem::get_last_submission, sql, utils::today_utc};
 use anyhow::Result;
 use kovi::{chrono, log::info, tokio::sync::RwLock};
+use sqlx::{FromRow, Row, sqlite::SqliteRow};
 
 static USER: LazyLock<RwLock<HashMap<i64, User>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 
@@ -38,6 +39,25 @@ struct Bind {
     cf_id: String,
     /// 绑定开始时间
     start_time: chrono::DateTime<chrono::Utc>,
+}
+
+impl<'r> FromRow<'r, SqliteRow> for User {
+    fn from_row(row: &'r SqliteRow) -> std::result::Result<Self, sqlx::Error> {
+        let qq: i64 = row.try_get("qq")?;
+        let rating: i64 = row.try_get("rating")?;
+        let cf_id: Option<String> = row.try_get("cf_id")?;
+        let daily_score: i64 = row.try_get("daily_score")?;
+        let last_daily: String = row.try_get("last_daily")?;
+
+        Ok(Self {
+            qq,
+            rating,
+            cf_id,
+            bind: None,
+            daily_score,
+            last_daily,
+        })
+    }
 }
 
 impl User {

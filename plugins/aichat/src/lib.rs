@@ -51,14 +51,19 @@ async fn main() {
             }
 
             let group = event.group_id.unwrap();
-            let msgs = MESSAGE
-                .write()
-                .await
-                .entry(group)
-                .or_insert(Arc::new(Mutex::new(req::ChatBody::new(
-                    config.model.clone(),
-                ))))
-                .clone();
+            let msgs = {
+                match MESSAGE.read().await.get(&group) {
+                    Some(v) => v.clone(),
+                    None => MESSAGE
+                        .write()
+                        .await
+                        .entry(group)
+                        .or_insert(Arc::new(Mutex::new(req::ChatBody::new(
+                            config.model.clone(),
+                        ))))
+                        .clone(),
+                }
+            };
 
             let mut msgs = match msgs.try_lock() {
                 Ok(v) => v,

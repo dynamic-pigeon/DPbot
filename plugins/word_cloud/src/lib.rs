@@ -90,7 +90,7 @@ async fn main() {
     plugin::on_group_msg(move |event| {
         let db = Arc::clone(&db_clone);
         async move {
-            let msg = event.borrow_text().unwrap_or_default();
+            let msg = &get_text(&event.message).await;
 
             if msg.is_empty() {
                 return;
@@ -101,6 +101,32 @@ async fn main() {
             add_msg(&db, group_id, msg).await;
         }
     });
+}
+
+async fn get_text(msg: &Message) -> String {
+    let mut text = String::new();
+
+    for seg in msg.iter() {
+        match seg.type_.as_str() {
+            "text" => {
+                text.push_str(seg.data["text"].as_str().unwrap());
+            }
+            "image" => {
+                let tx = match ocr::ocr(seg.data["url"].as_str().unwrap()).await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        log::error!("ocr failed: {}", e);
+                        continue;
+                    }
+                };
+
+                text.push_str(&tx);
+            }
+            _ => {}
+        }
+    }
+
+    text
 }
 
 async fn init(db: &sqlx::SqlitePool) {
@@ -208,13 +234,24 @@ async fn remove_before(db: &sqlx::SqlitePool, time: chrono::DateTime<chrono::Utc
 struct Config {
     pub wordcloud_cli_path: String,
     pub notify_group: Vec<i64>,
+    #[serde(rename = "SecretId")]
+    pub secret_id: String,
+    #[serde(rename = "SecretKey")]
+    pub secret_key: String,
+    #[serde(rename = "PythonPath")]
+    pub python_path: String,
+    pub ocr_path: String,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             wordcloud_cli_path: "wordcloud_cli".to_string(),
+            python_path: "python3".to_string(),
             notify_group: vec![],
+            secret_id: "".to_string(),
+            secret_key: "".to_string(),
+            ocr_path: "ocr.py".to_string(),
         }
     }
 }

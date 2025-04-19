@@ -1,16 +1,11 @@
-use std::sync::LazyLock;
-
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use kovi::{Message, MsgEvent, tokio::sync::Mutex};
+use kovi::{Message, MsgEvent};
 
 use crate::{
     CONFIG, PATH,
     utils::{IdOrText, user_id_or_text},
 };
-
-static RATING_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-static ANALYZE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 pub async fn rating(event: &MsgEvent, args: &[String]) {
     let user = args.get(2).map(|s| user_id_or_text(s)).unwrap();
@@ -26,8 +21,6 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
     let path = PATH.get().unwrap().join("codeforces");
     let py_analyzer_path = CONFIG.get().unwrap().py_analyzer_path.clone();
     let py_path = path.join("rating.py");
-
-    let _lock = RATING_LOCK.lock().await;
 
     event.reply("正在查询用户rating记录");
 
@@ -72,8 +65,6 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
     let path = PATH.get().unwrap().join("codeforces");
     let py_analyzer_path = CONFIG.get().unwrap().py_analyzer_path.clone();
     let py_path = path.join("analyze.py");
-
-    let _lock = ANALYZE_LOCK.lock().await;
 
     event.reply("正在查询用户做题记录");
 

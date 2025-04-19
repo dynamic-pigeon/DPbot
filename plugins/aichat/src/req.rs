@@ -103,7 +103,7 @@ impl Chat {
         };
 
         msgs.add_message(Message {
-            role: "system".to_string(),
+            role: "assistant".to_string(),
             content: reply.to_string(),
         });
 

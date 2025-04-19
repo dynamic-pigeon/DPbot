@@ -52,8 +52,6 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Pr
         .map(|tag| tag.replace("_", " "))
         .collect::<Vec<_>>();
 
-    check_tags(&tags)?;
-
     let tags = tags
         .into_iter()
         .map(|tag| {
@@ -81,9 +79,9 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Pr
 
     let problems = problems
         .iter()
+        .filter(|problem| problem.rating == Some(rating))
         .filter(filter_by_nag(&nag_tags, qq).await?)
         .filter(filter_by_pos(&pos_tags, qq).await?)
-        .filter(|problem| problem.rating == Some(rating))
         .cloned()
         .collect::<Vec<_>>();
 
@@ -151,6 +149,8 @@ async fn filter_help<'a>(
     tags: &[&'a str],
     qq: i64,
 ) -> Result<(bool, bool, HashSet<(i64, String)>, Vec<&'a str>)> {
+    check_tags(tags)?;
+
     let mut new = false;
     let mut not_seen = false;
 
@@ -198,9 +198,9 @@ async fn filter_help<'a>(
     Ok((new, not_seen, seen, tags))
 }
 
-fn check_tags(tags: &[String]) -> Result<()> {
+fn check_tags(tags: &[&str]) -> Result<()> {
     for tag in tags {
-        if !TAGS.contains(&tag.as_str()) {
+        if !TAGS.contains(tag) {
             let similar = TAGS
                 .iter()
                 .max_by_key(|&&t| (strsim::normalized_damerau_levenshtein(t, tag) * 1000.0) as i64)
@@ -306,9 +306,7 @@ async fn fetch_problems() -> Result<ProblemSet, Error> {
                         _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
                     }
                 }
-                _ => {
-                    return Err(anyhow::anyhow!("Failed to fetch problems"));
-                }
+                _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
             }
         }
         _ => return Err(anyhow::anyhow!("Failed to fetch problems")),

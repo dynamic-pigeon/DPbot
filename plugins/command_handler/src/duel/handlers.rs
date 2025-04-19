@@ -1,7 +1,7 @@
 use kovi::{
     MsgEvent,
     bot::message::Segment,
-    log::{debug, info},
+    log::{debug, error},
     serde_json::{self, json},
 };
 use rand::seq::SliceRandom;
@@ -200,20 +200,25 @@ pub async fn daily_finish(event: &MsgEvent) {
 
     debug!("Submission: {:#?}", submission);
 
-    let (submission, problem) = match submission {
-        serde_json::Value::Object(mut map) => {
-            let problem = match map.remove("problem") {
-                Some(problem) => problem,
-                _ => {
-                    event.reply("未知错误");
-                    return;
-                }
-            };
-            let problem: Problem = serde_json::from_value(problem).unwrap();
-            (map, problem)
+    let (submission, problem) = match async {
+        {
+            if let serde_json::Value::Object(mut map) = submission {
+                let problem: Problem = serde_json::from_value(
+                    map.remove("problem")
+                        .ok_or_else(|| anyhow::anyhow!("没有找到提交的题目"))?,
+                )?;
+                anyhow::Ok((map, problem))
+            } else {
+                Err(anyhow::anyhow!("获取提交记录失败"))?
+            }
         }
-        _ => {
-            event.reply("未知错误");
+    }
+    .await
+    {
+        Ok(res) => res,
+        Err(e) => {
+            error!("{}", e);
+            event.reply(e.to_string());
             return;
         }
     };
@@ -403,7 +408,8 @@ pub async fn cancel(event: &MsgEvent) {
             return;
         }
         Ok(challenge) => challenge,
-        _ => {
+        Err(e) => {
+            error!("{}", e);
             event.reply("你没有发起挑战");
             return;
         }
@@ -463,66 +469,31 @@ pub async fn challenge(event: &MsgEvent, args: &[String]) {
         }
     };
 
-    if user1 == user2 {
-        event.reply("你知道吗，人不能逃离自己的影子");
-        return;
-    }
-
-    let u1 = match sql::duel::user::get_user(user1).await {
-        Ok(user) => user,
-        Err(_) => {
-            event.reply("你没有绑定 CF 账号");
+    let rating = match args.get(3).and_then(|s| s.parse::<i64>().ok()) {
+        Some(rating) => rating,
+        None => {
+            event.reply("参数非法");
             return;
         }
     };
-
-    let u2 = match sql::duel::user::get_user(user2).await {
-        Ok(user) => user,
-        Err(_) => {
-            event.reply("对方没有绑定 CF 账号");
-            return;
-        }
-    };
-
-    if super::challenge::user_in_ongoing_challenge(user1).await
-        || super::challenge::user_in_ongoing_challenge(user2).await
-    {
-        event.reply("你或对方正在决斗中");
-        return;
-    }
-
-    let rating = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
-
-    if !(800..=3500).contains(&rating) || rating % 100 != 0 {
-        event.reply("rating 应该是 800 到 3500 之间的整数");
-        return;
-    }
 
     let tags = if args.len() >= 4 {
         args[4..].to_vec()
     } else {
         Vec::new()
     };
-    let time = today_utc();
 
-    let challenge = Challenge::new(
-        user1,
-        user2,
-        time,
-        tags,
-        rating,
-        None,
-        super::challenge::ChallengeStatus::Panding,
-    );
-
-    crate::duel::challenge::add_challenge(&challenge)
-        .await
-        .unwrap();
+    let (_chall, u1, u2) = match Challenge::from_args(user1, user2, rating, tags).await {
+        Ok(res) => res,
+        Err(e) => {
+            event.reply(e.to_string());
+            return;
+        }
+    };
 
     let msg = format!(
         "{} 向 {} 发起了挑战，请输入 /duel accept 接受挑战，或 /duel decline 拒绝挑战",
-        u1.cf_id.unwrap(),
-        u2.cf_id.unwrap()
+        u1, u2
     );
 
     event.reply(msg);
@@ -532,18 +503,17 @@ pub async fn problem(event: &MsgEvent, args: &[String]) {
     let rating = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
     let tags = if args.len() >= 3 { &args[3..] } else { &[] };
 
-    let problems = match super::problem::get_problems_by(tags, rating, event.user_id).await {
-        Ok(problems) => problems,
+    let problem = match super::problem::get_problems_by(tags, rating, event.user_id)
+        .await
+        .and_then(|problems| {
+            problems
+                .choose(&mut rand::thread_rng())
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("没有找到题目"))
+        }) {
+        Ok(problem) => problem,
         Err(e) => {
             event.reply(e.to_string());
-            return;
-        }
-    };
-
-    let problem = match problems.choose(&mut rand::thread_rng()) {
-        Some(problem) => problem,
-        None => {
-            event.reply("没有找到题目");
             return;
         }
     };

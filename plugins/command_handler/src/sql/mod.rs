@@ -2,7 +2,6 @@ use std::sync::OnceLock;
 
 use anyhow::Result;
 use kovi::log::debug;
-use sqlx::pool;
 
 pub(crate) mod duel;
 

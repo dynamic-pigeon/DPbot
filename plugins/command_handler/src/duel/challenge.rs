@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use kovi::chrono::{self, DateTime};
 use kovi::log::debug;
 use kovi::serde_json;
 use rand::seq::SliceRandom;
-use sqlx::{Decode, Encode, Sqlite, Type};
+use sqlx::sqlite::SqliteRow;
+use sqlx::{Decode, Encode, FromRow, Row, Sqlite, Type};
 
 use crate::duel::problem::get_problems_by;
 use crate::sql;
+use crate::utils::today_utc;
 
 use super::problem::{Problem, get_last_submission};
 
@@ -69,6 +71,37 @@ impl<'r> Decode<'r, Sqlite> for ChallengeStatus {
     }
 }
 
+impl<'r> FromRow<'r, SqliteRow> for Challenge {
+    fn from_row(row: &'r SqliteRow) -> std::result::Result<Self, sqlx::Error> {
+        let user1: i64 = row.try_get("user1")?;
+        let user2: i64 = row.try_get("user2")?;
+        let time: String = row.try_get("time")?;
+        let rating: i64 = row.try_get("rating")?;
+        let tags: String = row.try_get("tags")?;
+        let problem: Option<String> = row.try_get("problem")?;
+        let status: ChallengeStatus = row.try_get("status")?;
+
+        let time = chrono::DateTime::parse_from_rfc3339(&time)
+            .map(|dst| dst.to_utc())
+            .unwrap();
+
+        let tags = serde_json::from_str(&tags).unwrap();
+        let problem = problem
+            .as_ref()
+            .map(|problem| serde_json::from_str(problem).unwrap());
+
+        Ok(Challenge {
+            user1,
+            user2,
+            time,
+            rating,
+            tags,
+            problem,
+            status,
+        })
+    }
+}
+
 impl Challenge {
     pub fn new(
         user1: i64,
@@ -88,6 +121,60 @@ impl Challenge {
             problem,
             status,
         }
+    }
+
+    /// 创建一个新的 Challenge 实例
+    ///
+    /// @param user1 用户 1 的 ID
+    /// @param user2 用户 2 的 ID
+    /// @param rating 评分
+    /// @param tags 题目标签
+    /// @return (Challenge 实例, 用户 1 的 CF ID, 用户 2 的 CF ID)
+    pub async fn from_args(
+        user1: i64,
+        user2: i64,
+        rating: i64,
+        tags: Vec<String>,
+    ) -> Result<(Self, String, String)> {
+        if user1 == user2 {
+            return Err(anyhow!("你知道吗，人不能逃离自己的影子"));
+        }
+
+        let u1_cf_id = match sql::duel::user::get_user(user1).await {
+            Ok(user) => user.cf_id.ok_or_else(|| anyhow!("你没有绑定 CF 账号")),
+            Err(_) => Err(anyhow!("你没有绑定 CF 账号")),
+        }?;
+
+        let u2_cf_id = match sql::duel::user::get_user(user2).await {
+            Ok(user) => user.cf_id.ok_or_else(|| anyhow!("对方没有绑定 CF 账号")),
+            Err(_) => Err(anyhow!("对方没有绑定 CF 账号")),
+        }?;
+
+        if super::challenge::user_in_ongoing_challenge(user1).await
+            || super::challenge::user_in_ongoing_challenge(user2).await
+        {
+            return Err(anyhow!("你或对方正在决斗中"));
+        }
+
+        if !(800..=3500).contains(&rating) || rating % 100 != 0 {
+            return Err(anyhow!("rating 应该是 800 到 3500 之间的整数"));
+        }
+
+        let time = today_utc();
+
+        let challenge = Challenge::new(
+            user1,
+            user2,
+            time,
+            tags,
+            rating,
+            None,
+            super::challenge::ChallengeStatus::Panding,
+        );
+
+        crate::duel::challenge::add_challenge(&challenge).await?;
+
+        Ok((challenge, u1_cf_id, u2_cf_id))
     }
 
     pub fn started(&self) -> bool {
@@ -278,7 +365,7 @@ pub async fn get_challenge_by_user1(user_id: i64) -> Result<Challenge> {
     sql::duel::challenge::get_chall_ongoing_by_user(user_id)
         .await
         .and_then(|c| {
-            if c.user2 == user_id {
+            if c.user1 == user_id {
                 Ok(c)
             } else {
                 Err(anyhow::anyhow!("没有找到对局"))

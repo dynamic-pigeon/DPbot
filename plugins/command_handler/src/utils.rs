@@ -6,6 +6,19 @@ use kovi::{
 use anyhow::{Error, Result};
 use kovi::serde_json::Value;
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub(crate) struct Config {
+    pub py_analyzer_path: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            py_analyzer_path: "".to_string(),
+        }
+    }
+}
+
 pub enum IdOrText<'a> {
     Text(&'a str),
     At(i64),
@@ -47,62 +60,42 @@ pub fn today_utc() -> chrono::DateTime<Utc> {
 pub fn change(args: &mut [String], commands: &Value) -> Result<(String, bool)> {
     let mut changed = false;
 
-    let mut point = commands;
-
-    let mut i = 0;
-    let command = loop {
+    let command = args.iter_mut().try_fold(commands, |point, arg| {
         let map = match point {
-            Value::String(s) => break s.clone(),
-            Value::Object(obj) => obj,
-            _ => unreachable!("Invalid command"),
+            Value::String(_) => return Ok(point),
+            Value::Object(map) => map,
+            _ => return Err(Error::msg("Invalid command structure")),
         };
 
-        if i >= args.len() {
-            return Err(Error::msg("Invalid command"));
-        }
-
-        let mut key = None;
-        let mut best_match = 0.0;
-        let mut flag = false;
-        for (k, _) in map {
-            let diff = strsim::normalized_damerau_levenshtein(k, &args[i]);
-            if diff > 0.6 && diff > best_match {
-                key = Some(k);
-                best_match = diff;
-                flag = true;
-            }
-            if (diff - 1.0).abs() < 1e-6 {
-                flag = false;
-                break;
-            }
-        }
-
-        if key.is_none() {
-            return Err(Error::msg("Invalid command"));
-        }
+        let (key, flag) = map
+            .iter()
+            .filter_map(|(k, _)| {
+                let diff = strsim::normalized_damerau_levenshtein(k, arg);
+                if diff > 0.6 { Some((k, diff)) } else { None }
+            })
+            .max_by(|(_, diff1), (_, diff2)| {
+                diff1
+                    .partial_cmp(diff2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(k, diff)| {
+                let flag = (diff - 1.0).abs() >= 1e-6;
+                (k, flag)
+            })
+            .ok_or_else(|| Error::msg("Invalid command"))?;
 
         if flag {
-            args[i] = key.unwrap().clone();
             changed = true;
+            *arg = key.to_string();
         }
 
-        point = &map[key.unwrap()];
+        map.get(key).ok_or_else(|| Error::msg("Invalid command"))
+    })?;
 
-        i += 1;
+    let command = match command {
+        Value::String(cmd) => cmd.clone(),
+        _ => return Err(Error::msg("Invalid command structure")),
     };
 
     Ok((command, changed))
-}
-
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub(crate) struct Config {
-    pub py_analyzer_path: String,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            py_analyzer_path: "".to_string(),
-        }
-    }
 }
