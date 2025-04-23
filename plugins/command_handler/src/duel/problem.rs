@@ -5,11 +5,12 @@ use anyhow::{Error, Result};
 use kovi::log::info;
 use kovi::serde_json::{self, Value};
 use kovi::tokio::sync::{Mutex, RwLock};
-use rand::seq::{IteratorRandom, SliceRandom};
+use rand::seq::{IndexedRandom, IteratorRandom};
 
 use crate::duel::config::MAX_DAILY_RATING;
 
 use super::config::TAGS;
+use crate::utils::fetch;
 
 type ProblemSet = Vec<Arc<Problem>>;
 
@@ -52,17 +53,6 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Pr
         .map(|tag| tag.replace("_", " "))
         .collect::<Vec<_>>();
 
-    let tags = tags
-        .into_iter()
-        .map(|tag| {
-            if tag == "*special problem" {
-                "*special".to_string()
-            } else {
-                tag
-            }
-        })
-        .collect::<Vec<_>>();
-
     let (pos_tags, nag_tags) = {
         let mut pos_tags = Vec::new();
         let mut nag_tags = Vec::new();
@@ -75,6 +65,10 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Pr
         }
         (pos_tags, nag_tags)
     };
+
+    check_tags(&pos_tags)?;
+    check_tags(&nag_tags)?;
+
     let problems = get_problems().await?;
 
     let problems = problems
@@ -149,8 +143,6 @@ async fn filter_help<'a>(
     tags: &[&'a str],
     qq: i64,
 ) -> Result<(bool, bool, HashSet<(i64, String)>, Vec<&'a str>)> {
-    check_tags(tags)?;
-
     let mut new = false;
     let mut not_seen = false;
 
@@ -220,7 +212,7 @@ fn check_tags(tags: &[&str]) -> Result<()> {
 }
 
 pub async fn get_recent_submissions(cf_id: &str) -> Option<Vec<Value>> {
-    let res = reqwest::get(&format!(
+    let res = fetch(&format!(
         "https://codeforces.com/api/user.status?handle={}",
         cf_id
     ))
@@ -249,7 +241,7 @@ pub async fn get_recent_submissions(cf_id: &str) -> Option<Vec<Value>> {
 
 /// 得到用户最近一次提交的信息
 pub async fn get_last_submission(cf_id: &str) -> Option<Value> {
-    let res = reqwest::get(&format!(
+    let res = fetch(&format!(
         "https://codeforces.com/api/user.status?handle={}&count=1",
         cf_id
     ))
@@ -273,13 +265,7 @@ pub async fn get_last_submission(cf_id: &str) -> Option<Value> {
 }
 
 async fn fetch_problems() -> Result<ProblemSet, Error> {
-    let client = reqwest::Client::new();
-    let mut header = reqwest::header::HeaderMap::new();
-    header.insert(
-        reqwest::header::USER_AGENT,
-        reqwest::header::HeaderValue::from_static("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"),
-    );
-    let res = client.get(URL).headers(header).send().await?;
+    let res = fetch(URL).await?;
 
     let body = res.json::<Value>().await?;
     let status = body
@@ -291,24 +277,18 @@ async fn fetch_problems() -> Result<ProblemSet, Error> {
     };
 
     let problems = match body {
-        Value::Object(mut map) => {
-            let problems = map.remove("result");
-            match problems {
-                Some(Value::Object(mut map)) => {
-                    let problems = map.remove("problems");
-                    match problems {
-                        Some(Value::Array(problems)) => problems
-                            .into_iter()
-                            .map(serde_json::from_value)
-                            .filter_map(Result::ok)
-                            .map(Arc::new)
-                            .collect::<Vec<_>>(),
-                        _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
-                    }
-                }
+        Value::Object(mut map) => match map.remove("result") {
+            Some(Value::Object(mut map)) => match map.remove("problems") {
+                Some(Value::Array(problems)) => problems
+                    .into_iter()
+                    .map(serde_json::from_value)
+                    .filter_map(Result::ok)
+                    .map(Arc::new)
+                    .collect::<Vec<_>>(),
                 _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
-            }
-        }
+            },
+            _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
+        },
         _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
     };
 
@@ -317,7 +297,7 @@ async fn fetch_problems() -> Result<ProblemSet, Error> {
 
 pub async fn get_problems() -> Result<Arc<ProblemSet>, Error> {
     let problems = PROBLEMS.read().await;
-    if let Some(problems) = &*problems {
+    if let Some(ref problems) = *problems {
         return Ok(problems.clone());
     }
     drop(problems);
@@ -330,7 +310,7 @@ pub async fn get_problems() -> Result<Arc<ProblemSet>, Error> {
 #[allow(dead_code)]
 pub async fn random_problem() -> Result<Arc<Problem>, Error> {
     let problems = get_problems().await?;
-    let problem = problems.choose(&mut rand::thread_rng()).unwrap();
+    let problem = problems.choose(&mut rand::rng()).unwrap();
     Ok(problem.clone())
 }
 
@@ -346,7 +326,7 @@ pub async fn get_daily_problem() -> Result<Arc<Problem>, Error> {
                     problem.rating.unwrap_or(4000) <= MAX_DAILY_RATING
                         && !problem.tags.iter().any(|tag| tag == "*special")
                 })
-                .choose(&mut rand::thread_rng())
+                .choose(&mut rand::rng())
                 .cloned()
             {
                 Some(problem) => problem,

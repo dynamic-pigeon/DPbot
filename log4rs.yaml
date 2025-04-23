@@ -53,7 +53,7 @@ loggers:
     appenders:
       - stdout
   aichat:
-    level: info
+    level: debug
     appenders:
       - stdout
   word_cloud:

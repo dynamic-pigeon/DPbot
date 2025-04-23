@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 command_handler = { version = "0.1.0", path = "plugins/command_handler" }
-kovi = "0.11.8"
+kovi = "0.11.10"
 manager = { version = "0.1.0", path = "plugins/manager" }
 contest = { version = "0.1.0", path = "plugins/contest" }
 log4rs = "1.3"
@@ -13,7 +13,13 @@ aichat = { version = "0.1.0", path = "plugins/aichat" }
 word_cloud = { version = "0.1.0", path = "plugins/word_cloud" }
 
 [workspace]
-members = [ "plugins/aichat","plugins/command_handler", "plugins/contest", "plugins/manager", "plugins/word_cloud"]
+members = [
+    "plugins/aichat",
+    "plugins/command_handler",
+    "plugins/contest",
+    "plugins/manager",
+    "plugins/word_cloud",
+]
 
 [workspace.dependencies]
-kovi = "0.11.8"
+kovi = "0.11.10"

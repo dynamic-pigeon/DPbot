@@ -1,5 +1,5 @@
 use anyhow::Result;
-use kovi::{log::info, serde_json, tokio};
+use kovi::{serde_json, tokio};
 
 use crate::CONFIG;
 
@@ -15,10 +15,10 @@ pub async fn ocr(img_url: &str) -> Result<String> {
         .await?;
 
     if !output.status.success() {
-        return Err(anyhow::anyhow!(
+        Err(anyhow::anyhow!(
             "OCR failed: {}",
             String::from_utf8_lossy(&output.stderr)
-        ));
+        ))
     } else {
         let result = String::from_utf8(output.stdout)?;
         let req = serde_json::from_str::<serde_json::Value>(&result)?;
@@ -37,15 +37,16 @@ pub async fn ocr(img_url: &str) -> Result<String> {
                         }
                         None
                     })
-                    .collect::<Vec<_>>()
-                    .join(" "),
-                _ => {
-                    return Err(anyhow::anyhow!("Invalid response format"));
-                }
+                    .fold(String::new(), |mut str, text| {
+                        if !str.is_empty() {
+                            str.push(' ');
+                        }
+                        str.push_str(&text);
+                        str
+                    }),
+                _ => return Err(anyhow::anyhow!("Invalid response format")),
             },
-            _ => {
-                return Err(anyhow::anyhow!("Invalid response format"));
-            }
+            _ => return Err(anyhow::anyhow!("Invalid response format")),
         };
 
         Ok(result)

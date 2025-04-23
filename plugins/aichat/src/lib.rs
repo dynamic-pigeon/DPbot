@@ -51,17 +51,19 @@ async fn main() {
             }
 
             let group = event.group_id.unwrap();
+
             let msgs = {
-                match MESSAGE.read().await.get(&group) {
-                    Some(v) => v.clone(),
-                    None => MESSAGE
+                if let Some(v) = MESSAGE.read().await.get(&group) {
+                    v.clone()
+                } else {
+                    MESSAGE
                         .write()
                         .await
                         .entry(group)
                         .or_insert(Arc::new(Mutex::new(req::ChatBody::new(
                             config.model.clone(),
                         ))))
-                        .clone(),
+                        .clone()
                 }
             };
 
@@ -159,7 +161,7 @@ async fn md_to_html(md: &str) -> String {
     let parser = pulldown_cmark::Parser::new_ext(md, options);
 
     let mut html_output = String::new();
-    html_output.push_str(&html::HTML_START_NEXT_IS_MD_CSS);
+    html_output.push_str(html::HTML_START_NEXT_IS_MD_CSS);
 
     html_output.push_str(html::GITHUB_MARKDOWN_LIGHT_NEXT_IS_HTML2);
 

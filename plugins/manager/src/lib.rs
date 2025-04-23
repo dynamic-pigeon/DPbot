@@ -78,6 +78,7 @@ async fn handle_help(event: &MsgEvent, help: &Value, duel_help: &Value) {
         return;
     }
 
+    // 特殊处理
     if text == "duel" {
         let arr = match duel_help {
             Value::Array(arr) => arr,

@@ -4,7 +4,7 @@ use kovi::{
     log::{debug, error},
     serde_json::{self, json},
 };
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 
 use crate::{
     duel::problem::Problem,
@@ -200,21 +200,17 @@ pub async fn daily_finish(event: &MsgEvent) {
 
     debug!("Submission: {:#?}", submission);
 
-    let (submission, problem) = match async {
-        {
-            if let serde_json::Value::Object(mut map) = submission {
-                let problem: Problem = serde_json::from_value(
-                    map.remove("problem")
-                        .ok_or_else(|| anyhow::anyhow!("没有找到提交的题目"))?,
-                )?;
-                anyhow::Ok((map, problem))
-            } else {
-                Err(anyhow::anyhow!("获取提交记录失败"))?
-            }
+    let (submission, problem) = match (move || {
+        if let serde_json::Value::Object(mut map) = submission {
+            let problem: Problem = serde_json::from_value(
+                map.remove("problem")
+                    .ok_or_else(|| anyhow::anyhow!("没有找到提交的题目"))?,
+            )?;
+            anyhow::Ok((map, problem))
+        } else {
+            Err(anyhow::anyhow!("获取提交记录失败"))?
         }
-    }
-    .await
-    {
+    })() {
         Ok(res) => res,
         Err(e) => {
             error!("{}", e);
@@ -318,11 +314,9 @@ pub async fn change(event: &MsgEvent) {
         Ok(mut challenge) => match challenge.status {
             ChallengeStatus::Panding => {
                 event.reply("你还没有开始决斗");
-                return;
             }
             ChallengeStatus::ChangeProblem(user) if user == user_id => {
                 event.reply("你已经发起了换题请求");
-                return;
             }
             _ => {
                 let problem = match challenge.change().await {
@@ -345,7 +339,6 @@ pub async fn change(event: &MsgEvent) {
                 sql::duel::challenge::change_problem(&challenge)
                     .await
                     .unwrap();
-                return;
             }
         },
         _ => {
@@ -382,7 +375,7 @@ pub async fn change(event: &MsgEvent) {
 pub async fn decline(event: &MsgEvent) {
     let user2 = event.user_id;
     let chall = match crate::duel::challenge::get_challenge_by_user2(user2).await {
-        Ok(challenge) if challenge.status != ChallengeStatus::Panding => {
+        Ok(challenge) if challenge.started() => {
             event.reply("比赛已经开始了");
             return;
         }
@@ -403,7 +396,7 @@ pub async fn decline(event: &MsgEvent) {
 pub async fn cancel(event: &MsgEvent) {
     let user1 = event.user_id;
     let chall = match crate::duel::challenge::get_challenge_by_user1(user1).await {
-        Ok(challenge) if challenge.status != ChallengeStatus::Panding => {
+        Ok(challenge) if challenge.started() => {
             event.reply("比赛已经开始了");
             return;
         }
@@ -507,7 +500,7 @@ pub async fn problem(event: &MsgEvent, args: &[String]) {
         .await
         .and_then(|problems| {
             problems
-                .choose(&mut rand::thread_rng())
+                .choose(&mut rand::rng())
                 .cloned()
                 .ok_or_else(|| anyhow::anyhow!("没有找到题目"))
         }) {

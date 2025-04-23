@@ -24,11 +24,15 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
 
     event.reply("正在查询用户rating记录");
 
-    let output = match kovi::tokio::process::Command::new(py_analyzer_path)
-        .arg(py_path)
-        .arg(cf_id)
-        .output()
-        .await
+    let output: std::process::Output = match crate::utils::wait(async move || {
+        kovi::tokio::process::Command::new(py_analyzer_path)
+            .arg(py_path)
+            .arg(cf_id)
+            .output()
+            .await
+            .map_err(Into::into)
+    })
+    .await
     {
         Ok(output) => output,
         Err(e) => {
@@ -68,11 +72,15 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
 
     event.reply("正在查询用户做题记录");
 
-    let output = match kovi::tokio::process::Command::new(py_analyzer_path)
-        .arg(py_path)
-        .arg(cf_id)
-        .output()
-        .await
+    let output: std::process::Output = match crate::utils::wait(async move || {
+        kovi::tokio::process::Command::new(py_analyzer_path)
+            .arg(py_path)
+            .arg(cf_id)
+            .output()
+            .await
+            .map_err(Into::into)
+    })
+    .await
     {
         Ok(output) => output,
         Err(e) => {

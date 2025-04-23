@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use kovi::chrono::{self, DateTime};
 use kovi::log::debug;
 use kovi::serde_json;
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Decode, Encode, FromRow, Row, Sqlite, Type};
 
@@ -51,7 +51,7 @@ impl<'q> Encode<'q, Sqlite> for ChallengeStatus {
                 <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&-res, buf)
             }
             ChallengeStatus::ChangeProblem(id) => {
-                <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&id, buf)
+                <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(id, buf)
             }
         }
     }
@@ -125,11 +125,16 @@ impl Challenge {
 
     /// 创建一个新的 Challenge 实例
     ///
-    /// @param user1 用户 1 的 ID
-    /// @param user2 用户 2 的 ID
-    /// @param rating 评分
-    /// @param tags 题目标签
-    /// @return (Challenge 实例, 用户 1 的 CF ID, 用户 2 的 CF ID)
+    /// ## 参数
+    ///
+    /// - `user1` 用户 1 的 ID
+    /// - `user2` 用户 2 的 ID
+    /// - `rating` 评分
+    /// - `tags` 题目标签
+    ///
+    /// ## 返回值
+    ///
+    /// (Challenge 实例, 用户 1 的 CF ID, 用户 2 的 CF ID)
     pub async fn from_args(
         user1: i64,
         user2: i64,
@@ -150,9 +155,7 @@ impl Challenge {
             Err(_) => Err(anyhow!("对方没有绑定 CF 账号")),
         }?;
 
-        if super::challenge::user_in_ongoing_challenge(user1).await
-            || super::challenge::user_in_ongoing_challenge(user2).await
-        {
+        if user_in_ongoing_challenge(user1).await || user_in_ongoing_challenge(user2).await {
             return Err(anyhow!("你或对方正在决斗中"));
         }
 
@@ -169,7 +172,7 @@ impl Challenge {
             tags,
             rating,
             None,
-            super::challenge::ChallengeStatus::Panding,
+            ChallengeStatus::Panding,
         );
 
         crate::duel::challenge::add_challenge(&challenge).await?;
@@ -184,7 +187,7 @@ impl Challenge {
     pub async fn start(&mut self) -> Result<Arc<Problem>> {
         let problems = get_problems_by(&self.tags, self.rating, self.user1).await?;
         let problem = problems
-            .choose(&mut rand::thread_rng())
+            .choose(&mut rand::rng())
             .ok_or_else(|| anyhow::anyhow!("没有找到题目"))?;
         self.problem = Some(problem.as_ref().clone());
         self.status = ChallengeStatus::Ongoing;
@@ -300,7 +303,7 @@ impl Challenge {
     pub async fn change(&mut self) -> Result<Arc<Problem>> {
         let problems = get_problems_by(&self.tags, self.rating, self.user1).await?;
         let problem = problems
-            .choose(&mut rand::thread_rng())
+            .choose(&mut rand::rng())
             .ok_or_else(|| anyhow::anyhow!("没有找到题目"))?;
         self.problem = Some(problem.as_ref().clone());
         sql::duel::challenge::change_problem(self).await?;

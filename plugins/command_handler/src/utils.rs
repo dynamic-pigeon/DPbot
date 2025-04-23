@@ -1,10 +1,15 @@
+use std::sync::LazyLock;
+
 use kovi::{
     Message,
     chrono::{self, Utc},
+    tokio,
 };
 
 use anyhow::{Error, Result};
 use kovi::serde_json::Value;
+
+static LOCK: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Config {
@@ -98,4 +103,21 @@ pub fn change(args: &mut [String], commands: &Value) -> Result<(String, bool)> {
     };
 
     Ok((command, changed))
+}
+
+pub(crate) async fn fetch(url: &str) -> Result<reqwest::Response> {
+    wait(async move || reqwest::get(url).await.map_err(Into::into)).await
+}
+
+/// 用于对 api 的访问
+///
+/// ## 参数
+/// - `f`: 异步函数，必须要保证不会 panic，否则会导致锁死锁
+pub(crate) async fn wait<T>(f: impl AsyncFnOnce() -> Result<T>) -> Result<T> {
+    // 同时只有一个请求可以发出
+    // 用于请求在于外部接口时
+    let _lock = LOCK.lock().await;
+    let res = f().await;
+    kovi::tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    res
 }

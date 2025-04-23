@@ -5,6 +5,7 @@ use std::{
 
 use kovi::{
     Message, PluginBuilder as plugin, chrono,
+    futures_util::{StreamExt, stream},
     log::{self, debug, info},
     tokio::{self, sync::RwLock},
 };
@@ -104,29 +105,22 @@ async fn main() {
 }
 
 async fn get_text(msg: &Message) -> String {
-    let mut text = String::new();
-
-    for seg in msg.iter() {
-        match seg.type_.as_str() {
-            "text" => {
-                text.push_str(seg.data["text"].as_str().unwrap());
-            }
-            "image" => {
-                let tx = match ocr::ocr(seg.data["url"].as_str().unwrap()).await {
-                    Ok(tx) => tx,
+    stream::iter(msg.iter())
+        .filter_map(
+            async |seg: &kovi::bot::message::Segment| match seg.type_.as_str() {
+                "text" => Some(seg.data["text"].as_str().unwrap().to_string()),
+                "image" => match ocr::ocr(seg.data["url"].as_str().unwrap()).await {
+                    Ok(tx) => Some(tx),
                     Err(e) => {
                         log::error!("ocr failed: {}", e);
-                        continue;
+                        None
                     }
-                };
-
-                text.push_str(&tx);
-            }
-            _ => {}
-        }
-    }
-
-    text
+                },
+                _ => None,
+            },
+        )
+        .collect()
+        .await
 }
 
 async fn init(db: &sqlx::SqlitePool) {

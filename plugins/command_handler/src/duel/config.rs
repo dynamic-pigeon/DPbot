@@ -40,7 +40,7 @@ pub const TAGS: &[&str] = &[
     "ternary search",
     "trees",
     "two pointers",
-    "*special problem",
+    "*special",
     "not-seen",
     "new",
 ];
