@@ -8,6 +8,7 @@ use utils::{change, mes_to_text};
 
 pub(crate) mod codeforces;
 pub(crate) mod duel;
+pub(crate) mod error;
 pub(crate) mod sql;
 pub(crate) mod utils;
 
@@ -71,7 +72,7 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
     if changed {
         let new_text = format!("指令被解析为 /{}", args.join(" "));
         event.reply(new_text);
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 
     match cmd.as_str() {

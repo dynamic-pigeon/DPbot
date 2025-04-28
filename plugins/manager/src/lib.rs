@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use config::Config;
 use kovi::MsgEvent;
 use kovi::bot::message::Segment;
@@ -7,6 +5,8 @@ use kovi::bot::runtimebot::kovi_api::SetAccessControlList;
 use kovi::serde_json::{Value, json};
 use kovi::utils::load_json_data;
 use kovi::{Message, PluginBuilder as plugin};
+use std::iter::Iterator;
+use std::sync::Arc;
 
 mod config;
 

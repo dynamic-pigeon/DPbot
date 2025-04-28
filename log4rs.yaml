@@ -57,6 +57,6 @@ loggers:
     appenders:
       - stdout
   word_cloud:
-    level: info
+    level: debug
     appenders:
       - stdout

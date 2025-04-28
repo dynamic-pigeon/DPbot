@@ -11,7 +11,7 @@ from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
 from tencentcloud.ocr.v20181119 import ocr_client, models
 
 
-def main(url, secret_id, secret_key):
+def main(base64, secret_id, secret_key):
     try:
         # 实例化一个认证对象，入参需要传入腾讯云账户 SecretId 和 SecretKey，此处还需注意密钥对的保密
         # 代码泄露可能会导致 SecretId 和 SecretKey 泄露，并威胁账号下所有资源的安全性
@@ -38,7 +38,7 @@ def main(url, secret_id, secret_key):
         else:
             req = models.GeneralAccurateOCRRequest()
 
-        params = {"ImageUrl": url}
+        params = {"ImageBase64": base64}
         req.from_json_string(json.dumps(params))
 
         # 返回的resp是一个GeneralBasicOCRResponse的实例，与请求对象对应
@@ -57,5 +57,5 @@ def main(url, secret_id, secret_key):
 if __name__ == "__main__":
     secret_id = os.getenv("SECRET_ID")
     secret_key = os.getenv("SECRET_KEY")
-    url = os.getenv("IMAGE_URL")
-    main(url, secret_id, secret_key)
+    base64 = os.getenv("IMAGE_BASE64")
+    main(base64, secret_id, secret_key)

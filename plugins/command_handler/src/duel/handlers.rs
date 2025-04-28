@@ -191,7 +191,7 @@ pub async fn daily_finish(event: &MsgEvent) {
     }
 
     let submission = match super::problem::get_last_submission(user.cf_id.as_ref().unwrap()).await {
-        Some(submission) => submission,
+        Ok(submission) => submission,
         _ => {
             event.reply("获取提交记录失败");
             return;

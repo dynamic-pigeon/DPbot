@@ -9,6 +9,7 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::{Decode, Encode, FromRow, Row, Sqlite, Type};
 
 use crate::duel::problem::get_problems_by;
+use crate::error::SubmissionError;
 use crate::sql;
 use crate::utils::today_utc;
 
@@ -230,13 +231,9 @@ impl Challenge {
         let user1 = sql::duel::user::get_user(self.user1).await?;
         let user2 = sql::duel::user::get_user(self.user2).await?;
 
-        let user1_sub = get_last_submission(user1.cf_id.as_ref().unwrap())
-            .await
-            .ok_or(anyhow::anyhow!("获取提交记录失败"))?;
+        let user1_sub = get_last_submission(user1.cf_id.as_ref().unwrap()).await;
 
-        let user2_sub = get_last_submission(user2.cf_id.as_ref().unwrap())
-            .await
-            .ok_or(anyhow::anyhow!("获取提交记录失败"))?;
+        let user2_sub = get_last_submission(user2.cf_id.as_ref().unwrap()).await;
 
         let user1_score = self.calc_score(user1_sub)?;
         let user2_score = self.calc_score(user2_sub)?;
@@ -268,7 +265,16 @@ impl Challenge {
 
     /// @param submission 提交记录
     /// @return (是否通过, -提交时间)
-    fn calc_score(&self, submission: kovi::serde_json::Value) -> Result<(bool, i64)> {
+    fn calc_score(
+        &self,
+        submission: Result<kovi::serde_json::Value, SubmissionError>,
+    ) -> Result<(bool, i64)> {
+        let submission = match submission {
+            Ok(submission) => submission,
+            Err(SubmissionError::NoSubmission) => return Ok((false, 0)),
+            _ => return Err(anyhow::anyhow!("获取提交记录失败")),
+        };
+
         debug!("Submission: {:#?}", submission);
         let mut submission = match submission {
             serde_json::Value::Object(map) => map,
@@ -300,6 +306,7 @@ impl Challenge {
         self.status = status;
         sql::duel::challenge::change_status(self).await
     }
+
     pub async fn change(&mut self) -> Result<Arc<Problem>> {
         let problems = get_problems_by(&self.tags, self.rating, self.user1).await?;
         let problem = problems

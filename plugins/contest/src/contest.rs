@@ -93,10 +93,7 @@ pub async fn init() -> Result<usize> {
         map.entry(start).or_default().push(contest);
     }
 
-    let config = {
-        let config = crate::CONFIG.get().unwrap();
-        Arc::clone(config)
-    };
+    let config = crate::CONFIG.get().unwrap();
 
     let mut count = 0;
 
@@ -104,7 +101,7 @@ pub async fn init() -> Result<usize> {
         count += contests.len();
         for sub_time in config.notify_time.iter() {
             let mut msg = format!("选手注意，以下比赛还有不到 {} 分钟就要开始了：", sub_time);
-            for contest in contests.iter().cloned() {
+            for contest in contests.iter() {
                 let add = format!("\n\n{}\n{}", contest.event, contest.href);
 
                 msg.push_str(&add);
@@ -125,10 +122,10 @@ pub async fn init() -> Result<usize> {
                 continue;
             }
 
-            let config = config.clone();
             kovi::spawn(async move {
                 kovi::tokio::time::sleep(duration.to_std().unwrap()).await;
-                let bot = crate::BOT.get().unwrap().clone();
+                let config = crate::CONFIG.get().unwrap();
+                let bot = crate::BOT.get().unwrap();
                 for group in config.notify_group.iter() {
                     bot.send_group_msg(*group, &msg);
                 }
@@ -144,7 +141,7 @@ pub async fn daily_init() {
 
     if let Ok(count) = count {
         info!("{} contests are going to start today.", count);
-        let bot = crate::BOT.get().unwrap().clone();
+        let bot = crate::BOT.get().unwrap();
 
         let msg = if count == 0 {
             "今天没有比赛，但也不要松懈哦。".to_string()
@@ -152,7 +149,7 @@ pub async fn daily_init() {
             format!("今天装填了 {} 场比赛，准备发射！", count)
         };
 
-        let config = crate::CONFIG.get().unwrap().clone();
+        let config = crate::CONFIG.get().unwrap();
         for group in config.notify_group.iter() {
             bot.send_group_msg(*group, &msg);
         }
@@ -161,7 +158,7 @@ pub async fn daily_init() {
 
 pub(crate) async fn update_contests() -> Result<()> {
     let mut contests = super::getter::fetch_contest().await?;
-    contests.sort_by_key(|contest| contest.start.clone());
+    contests.sort_by(|a, b| a.start.cmp(&b.start));
     *CONTESTS.write().await = Arc::new(contests);
 
     Ok(())
@@ -173,7 +170,7 @@ fn seconds_to_str(seconds: i64) -> String {
     let minute = total_minutes % 60;
     let day = total_minutes / 60 / 24;
     if day > 0 {
-        return format!("{}d {:02}h {:02}min", day, hour, minute);
+        return format!("{}day {:02}h {:02}min", day, hour, minute);
     }
     format!("{:02}h {:02}min", hour, minute)
 }

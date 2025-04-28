@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     path::PathBuf,
     sync::{Arc, LazyLock, OnceLock},
 };
@@ -74,9 +75,7 @@ async fn main() {
                 info!("send word cloud to group: {}", group_id);
 
                 let image = STANDARD.encode(&image);
-
                 let image = format!("base64://{}", image);
-
                 bot.send_group_msg(
                     *group_id,
                     Message::new().add_text("今日词云").add_image(&image),
@@ -91,7 +90,8 @@ async fn main() {
     plugin::on_group_msg(move |event| {
         let db = Arc::clone(&db_clone);
         async move {
-            let msg = &get_text(&event.message).await;
+            // return;
+            let msg = get_text(&event.message).await;
 
             if msg.is_empty() {
                 return;
@@ -99,28 +99,33 @@ async fn main() {
 
             let group_id = event.group_id.unwrap();
 
-            add_msg(&db, group_id, msg).await;
+            add_msg(&db, group_id, &msg).await;
         }
     });
 }
 
 async fn get_text(msg: &Message) -> String {
-    stream::iter(msg.iter())
-        .filter_map(
-            async |seg: &kovi::bot::message::Segment| match seg.type_.as_str() {
-                "text" => Some(seg.data["text"].as_str().unwrap().to_string()),
-                "image" => match ocr::ocr(seg.data["url"].as_str().unwrap()).await {
-                    Ok(tx) => Some(tx),
-                    Err(e) => {
-                        log::error!("ocr failed: {}", e);
-                        None
-                    }
-                },
-                _ => None,
+    let mut res = String::new();
+
+    for seg in msg.iter() {
+        if !res.is_empty() {
+            res.push(' ');
+        }
+        match seg.type_.as_str() {
+            "text" => res.push_str(seg.data["text"].as_str().unwrap()),
+            "image" => match ocr::ocr(seg.data["url"].as_str().unwrap()).await {
+                Ok(tx) => {
+                    res.push_str(&tx);
+                }
+                Err(e) => {
+                    log::error!("ocr failed: {}", e);
+                }
             },
-        )
-        .collect()
-        .await
+            _ => {}
+        }
+    }
+
+    res
 }
 
 async fn init(db: &sqlx::SqlitePool) {

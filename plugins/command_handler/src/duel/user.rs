@@ -107,7 +107,7 @@ impl Bind {
     }
 
     async fn finish(&self) -> Result<()> {
-        let Some(submission) = get_last_submission(&self.cf_id).await else {
+        let Ok(submission) = get_last_submission(&self.cf_id).await else {
             return Err(anyhow::anyhow!("获取提交记录失败"));
         };
 

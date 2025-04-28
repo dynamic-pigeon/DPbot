@@ -2,6 +2,7 @@
 .vscode
 .idea
 .cargo
+tmp
 data/command_handler/data.db
 data/contest/config.json
 data/manager/config.json

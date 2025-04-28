@@ -8,6 +8,7 @@ use kovi::tokio::sync::{Mutex, RwLock};
 use rand::seq::{IndexedRandom, IteratorRandom};
 
 use crate::duel::config::MAX_DAILY_RATING;
+use crate::error::SubmissionError;
 
 use super::config::TAGS;
 use crate::utils::fetch;
@@ -211,57 +212,68 @@ fn check_tags(tags: &[&str]) -> Result<()> {
     Ok(())
 }
 
-pub async fn get_recent_submissions(cf_id: &str) -> Option<Vec<Value>> {
+pub async fn get_recent_submissions(cf_id: &str) -> Result<Vec<Value>, SubmissionError> {
     let res = fetch(&format!(
         "https://codeforces.com/api/user.status?handle={}",
         cf_id
     ))
     .await
-    .ok()?;
+    .map_err(|_| SubmissionError::FetchError)?;
 
     info!("Got response: {:?}", res);
 
-    let body = res.json::<Value>().await.ok()?;
-    let status = body["status"].as_str()?;
+    let body = res
+        .json::<Value>()
+        .await
+        .map_err(|_| SubmissionError::FetchError)?;
+    let status = body["status"]
+        .as_str()
+        .ok_or_else(|| SubmissionError::FetchError)?;
     if status != "OK" {
-        return None;
+        return Err(SubmissionError::FetchError);
     }
 
     match body {
-        Value::Object(mut map) => {
-            let submissions = map.remove("result")?;
-            match submissions {
-                Value::Array(submissions) => Some(submissions),
-                _ => None,
-            }
-        }
+        Value::Object(mut map) => match map.remove("result") {
+            Some(Value::Array(submissions)) => Ok(submissions),
+            _ => Err(SubmissionError::NoSubmission),
+        },
         _ => unreachable!("Invalid response"),
     }
 }
 
 /// 得到用户最近一次提交的信息
-pub async fn get_last_submission(cf_id: &str) -> Option<Value> {
+pub async fn get_last_submission(cf_id: &str) -> Result<Value, SubmissionError> {
     let res = fetch(&format!(
         "https://codeforces.com/api/user.status?handle={}&count=1",
         cf_id
     ))
     .await
-    .ok()?;
+    .map_err(|_| SubmissionError::FetchError)?;
 
-    let body = res.json::<Value>().await.ok()?;
-    let status = body.get("status")?.as_str()?;
+    let body = res
+        .json::<Value>()
+        .await
+        .map_err(|_| SubmissionError::FetchError)?;
+
+    let status = body["status"]
+        .as_str()
+        .ok_or_else(|| SubmissionError::FetchError)?;
     if status != "OK" {
-        return None;
+        return Err(SubmissionError::FetchError);
     }
 
-    let submissions = match body.get("result")? {
-        Value::Array(submissions) => submissions,
-        _ => return None,
-    };
-
-    let submission = submissions.first().cloned();
-
-    submission
+    match body {
+        Value::Object(mut map) => match map.remove("result") {
+            Some(Value::Array(mut submissions)) => {
+                // 获取最近一次提交
+                assert!(submissions.len() <= 1);
+                submissions.pop().ok_or(SubmissionError::NoSubmission)
+            }
+            _ => Err(SubmissionError::NoSubmission),
+        },
+        _ => unreachable!("Invalid response"),
+    }
 }
 
 async fn fetch_problems() -> Result<ProblemSet, Error> {
@@ -296,15 +308,14 @@ async fn fetch_problems() -> Result<ProblemSet, Error> {
 }
 
 pub async fn get_problems() -> Result<Arc<ProblemSet>, Error> {
-    let problems = PROBLEMS.read().await;
-    if let Some(ref problems) = *problems {
-        return Ok(problems.clone());
+    if let Some(ref problems) = *PROBLEMS.read().await {
+        Ok(Arc::clone(problems))
+    } else {
+        let problems = fetch_problems().await?;
+        let problems = Arc::new(problems);
+        PROBLEMS.write().await.replace(Arc::clone(&problems));
+        Ok(problems)
     }
-    drop(problems);
-    let problems = fetch_problems().await?;
-    let problems = Arc::new(problems);
-    PROBLEMS.write().await.replace(problems.clone());
-    Ok(problems)
 }
 
 #[allow(dead_code)]
