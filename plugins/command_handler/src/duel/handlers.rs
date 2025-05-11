@@ -312,7 +312,7 @@ pub async fn change(event: &MsgEvent) {
 
     match super::challenge::get_ongoing_challenge_by_user(user_id).await {
         Ok(mut challenge) => match challenge.status {
-            ChallengeStatus::Panding => {
+            ChallengeStatus::Pending => {
                 event.reply("你还没有开始决斗");
             }
             ChallengeStatus::ChangeProblem(user) if user == user_id => {
@@ -375,7 +375,7 @@ pub async fn change(event: &MsgEvent) {
 pub async fn decline(event: &MsgEvent) {
     let user2 = event.user_id;
     let chall = match crate::duel::challenge::get_challenge_by_user2(user2).await {
-        Ok(challenge) if challenge.started() => {
+        Ok(challenge) if challenge.is_started() => {
             event.reply("比赛已经开始了");
             return;
         }
@@ -396,7 +396,7 @@ pub async fn decline(event: &MsgEvent) {
 pub async fn cancel(event: &MsgEvent) {
     let user1 = event.user_id;
     let chall = match crate::duel::challenge::get_challenge_by_user1(user1).await {
-        Ok(challenge) if challenge.started() => {
+        Ok(challenge) if challenge.is_started() => {
             event.reply("比赛已经开始了");
             return;
         }
@@ -418,7 +418,7 @@ pub async fn cancel(event: &MsgEvent) {
 pub async fn accept(event: &MsgEvent) {
     let user2 = event.user_id;
     let user1 = match crate::duel::challenge::get_challenge_by_user2(user2).await {
-        Ok(challenge) if challenge.status != ChallengeStatus::Panding => {
+        Ok(challenge) if challenge.status != ChallengeStatus::Pending => {
             event.reply("比赛已经开始了");
             return;
         }
@@ -540,7 +540,7 @@ pub async fn bind(event: &MsgEvent, args: &[String]) {
         }
     };
 
-    user.bind(cf_id.clone());
+    user.start_bind(cf_id.clone());
     crate::duel::user::add_to(user).await;
     event.reply(format!("你正在绑定 CF 账号：{}，请在 120 秒内向 https://codeforces.com/contest/1/problem/A 提交一个 CE，之后输入 /bind finish 完成绑定。", cf_id));
 }

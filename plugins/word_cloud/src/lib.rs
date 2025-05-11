@@ -1,14 +1,13 @@
 use std::{
-    collections::HashSet,
     path::PathBuf,
-    sync::{Arc, LazyLock, OnceLock},
+    process::Stdio,
+    sync::{Arc, OnceLock},
 };
 
 use kovi::{
     Message, PluginBuilder as plugin, chrono,
-    futures_util::{StreamExt, stream},
     log::{self, debug, info},
-    tokio::{self, sync::RwLock},
+    tokio::{self, io::AsyncWriteExt},
 };
 
 use anyhow::Result;
@@ -17,7 +16,6 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 mod ocr;
 
 static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
-static LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
 
 #[kovi::plugin]
 async fn main() {
@@ -90,14 +88,17 @@ async fn main() {
     plugin::on_group_msg(move |event| {
         let db = Arc::clone(&db_clone);
         async move {
-            // return;
+            let group_id = event.group_id.unwrap();
+
+            let config = CONFIG.get().unwrap();
+            if !config.notify_group.contains(&group_id) {
+                return;
+            }
             let msg = get_text(&event.message).await;
 
             if msg.is_empty() {
                 return;
             }
-
-            let group_id = event.group_id.unwrap();
 
             add_msg(&db, group_id, &msg).await;
         }
@@ -141,7 +142,6 @@ async fn init(db: &sqlx::SqlitePool) {
 }
 
 async fn add_msg(db: &sqlx::SqlitePool, group_id: i64, message: &str) {
-    let _lock = LOCK.read().await;
     sqlx::query(
         r#"
         INSERT INTO group_message (group_id, message, time) VALUES (?, ?, ?)
@@ -170,18 +170,12 @@ async fn make_word_cloud(
     let msg = jieba_rs::Jieba::new();
     let messages = msg.cut(&messages, true).join(" ");
 
-    let data_path = path.join("text.txt");
     let wc_cli = CONFIG.get().unwrap().wordcloud_cli_path.clone();
     let mask_path = path.join("mask.jpg");
     let stop_word_path = path.join("stopword.txt");
     let fontfile_path = path.join("font.otf");
 
-    let _lock = LOCK.write().await;
-    std::fs::write(&data_path, messages)?;
-
-    let output = tokio::process::Command::new(wc_cli)
-        .arg("--text")
-        .arg(data_path)
+    let mut child = tokio::process::Command::new(wc_cli)
         .arg("--mask")
         .arg(mask_path)
         .args(["--background", "white"])
@@ -189,8 +183,17 @@ async fn make_word_cloud(
         .arg(stop_word_path)
         .arg("--fontfile")
         .arg(fontfile_path)
-        .output()
-        .await?;
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(messages.as_bytes()).await?;
+    }
+
+    let output = child.wait_with_output().await?;
 
     Ok(output.stdout)
 }
@@ -201,7 +204,6 @@ async fn select_from_range(
     start_time: chrono::DateTime<chrono::Utc>,
     end_time: chrono::DateTime<chrono::Utc>,
 ) -> Result<Vec<String>> {
-    let _lock = LOCK.read().await;
     let result: Vec<(String,)> = sqlx::query_as(
         r#"
         SELECT message FROM group_message WHERE group_id = ? AND time BETWEEN ? AND ?
@@ -217,7 +219,6 @@ async fn select_from_range(
 }
 
 async fn remove_before(db: &sqlx::SqlitePool, time: chrono::DateTime<chrono::Utc>) {
-    let _lock = LOCK.write().await;
     sqlx::query(
         r#"
         DELETE FROM group_message WHERE time < ?

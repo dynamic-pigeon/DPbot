@@ -24,13 +24,13 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
 
     event.reply("正在查询用户rating记录");
 
-    let output: std::process::Output = match crate::utils::wait(async move || {
+    let output: std::process::Output = match crate::utils::wait(async move {
         kovi::tokio::process::Command::new(py_analyzer_path)
             .arg(py_path)
             .arg(cf_id)
             .output()
             .await
-            .map_err(Into::into)
+            .map_err(anyhow::Error::from)
     })
     .await
     {
@@ -72,13 +72,13 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
 
     event.reply("正在查询用户做题记录");
 
-    let output: std::process::Output = match crate::utils::wait(async move || {
+    let output: std::process::Output = match crate::utils::wait(async move {
         kovi::tokio::process::Command::new(py_analyzer_path)
             .arg(py_path)
             .arg(cf_id)
             .output()
             .await
-            .map_err(Into::into)
+            .map_err(anyhow::Error::from)
     })
     .await
     {

@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use kovi::{
     chrono::{self, Datelike, FixedOffset},
-    log::info,
+    log::{error, info},
     tokio::sync::RwLock,
 };
 use serde::Deserialize;
@@ -66,8 +66,11 @@ pub async fn get_all_contests() -> ContestSet {
 pub async fn init() -> Result<usize> {
     async {
         for _ in 0..3 {
-            if (update_contests().await).is_ok() {
-                return Ok(());
+            match update_contests().await {
+                Ok(f) => return Ok(f),
+                Err(e) => {
+                    error!("Failed to update contests: {}", e);
+                }
             }
         }
         send_to_super_admin("Failed to update contests").await;

@@ -78,7 +78,8 @@ impl User {
         }
     }
 
-    pub fn bind(&mut self, cf_id: String) {
+    #[inline]
+    pub fn start_bind(&mut self, cf_id: String) {
         self.bind = Some(Bind::new(cf_id));
     }
 

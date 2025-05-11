@@ -30,7 +30,7 @@ pub struct Challenge {
 pub enum ChallengeStatus {
     Ongoing,
     Finished(i64),
-    Panding,
+    Pending,
     ChangeProblem(i64),
 }
 
@@ -46,7 +46,7 @@ impl<'q> Encode<'q, Sqlite> for ChallengeStatus {
         buf: &mut <Sqlite as sqlx::Database>::ArgumentBuffer<'q>,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         match self {
-            ChallengeStatus::Panding => <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&1i64, buf),
+            ChallengeStatus::Pending => <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&1i64, buf),
             ChallengeStatus::Ongoing => <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&2i64, buf),
             ChallengeStatus::Finished(res) => {
                 <i64 as sqlx::Encode<Sqlite>>::encode_by_ref(&-res, buf)
@@ -64,7 +64,7 @@ impl<'r> Decode<'r, Sqlite> for ChallengeStatus {
     ) -> std::result::Result<Self, sqlx::error::BoxDynError> {
         let num: i64 = <i64 as sqlx::Decode<Sqlite>>::decode(value)?;
         match num {
-            1 => Ok(ChallengeStatus::Panding),
+            1 => Ok(ChallengeStatus::Pending),
             2 => Ok(ChallengeStatus::Ongoing),
             num if num > 0 => Ok(ChallengeStatus::ChangeProblem(num)),
             num => Ok(ChallengeStatus::Finished(-num)),
@@ -173,7 +173,7 @@ impl Challenge {
             tags,
             rating,
             None,
-            ChallengeStatus::Panding,
+            ChallengeStatus::Pending,
         );
 
         crate::duel::challenge::add_challenge(&challenge).await?;
@@ -181,8 +181,9 @@ impl Challenge {
         Ok((challenge, u1_cf_id, u2_cf_id))
     }
 
-    pub fn started(&self) -> bool {
-        !matches!(self.status, ChallengeStatus::Panding)
+    #[inline]
+    pub fn is_started(&self) -> bool {
+        !matches!(self.status, ChallengeStatus::Pending)
     }
 
     pub async fn start(&mut self) -> Result<Arc<Problem>> {

@@ -56,6 +56,7 @@ pub fn mes_to_text(msg: &Message) -> String {
         .collect::<String>()
 }
 
+#[inline]
 pub fn today_utc() -> chrono::DateTime<Utc> {
     let offset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
     chrono::Utc::now().with_timezone(&offset).to_utc()
@@ -106,18 +107,19 @@ pub fn change(args: &mut [String], commands: &Value) -> Result<(String, bool)> {
 }
 
 pub(crate) async fn fetch(url: &str) -> Result<reqwest::Response> {
-    wait(async move || reqwest::get(url).await.map_err(Into::into)).await
+    wait(async move { reqwest::get(url).await.map_err(Into::into) }).await
 }
 
-/// 用于对 api 的访问
+/// 用于对 api 的访问，防止访问过快被 api ban 了
 ///
 /// ## 参数
-/// - `f`: 异步函数，必须要保证不会 panic，否则会导致锁死锁
-pub(crate) async fn wait<T>(f: impl AsyncFnOnce() -> Result<T>) -> Result<T> {
-    // 同时只有一个请求可以发出
-    // 用于请求在于外部接口时
-    let _lock = LOCK.lock().await;
-    let res = f().await;
-    kovi::tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+/// - `f`: Future
+pub(crate) async fn wait<F: Future>(future: F) -> F::Output {
+    let lock = LOCK.lock().await;
+    kovi::spawn(async move {
+        let _ = lock;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    });
+    let res = future.await;
     res
 }

@@ -39,6 +39,7 @@ impl Problem {
         }
     }
 
+    #[inline]
     pub fn same_problem(&self, other: &Self) -> bool {
         self.contest_id == other.contest_id && self.index == other.index
     }
