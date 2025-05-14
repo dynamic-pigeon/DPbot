@@ -1,11 +1,16 @@
 use std::{
+    process::Stdio,
     sync::{Arc, LazyLock},
     time::Duration,
 };
 
 use anyhow::{Error, Result};
 use base64::{Engine, engine::general_purpose};
-use kovi::{log::debug, serde_json, tokio};
+use kovi::{
+    log::debug,
+    serde_json,
+    tokio::{self, io::AsyncWriteExt},
+};
 use moka::future::Cache;
 
 use crate::CONFIG;
@@ -55,13 +60,23 @@ impl OcrMemory {
 async fn get_ocr(img_base64: &str) -> Result<String> {
     let config = CONFIG.get().unwrap();
 
-    let output = tokio::process::Command::new(&config.python_path)
+    let mut child = tokio::process::Command::new(&config.python_path)
         .arg(&config.ocr_path)
         .env("SECRET_ID", &config.secret_id)
         .env("SECRET_KEY", &config.secret_key)
-        .env("IMAGE_BASE64", img_base64)
-        .output()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(img_base64.as_bytes())
         .await?;
+
+    let output = child.wait_with_output().await?;
 
     if !output.status.success() {
         Err(anyhow::anyhow!(

@@ -57,5 +57,5 @@ def main(base64, secret_id, secret_key):
 if __name__ == "__main__":
     secret_id = os.getenv("SECRET_ID")
     secret_key = os.getenv("SECRET_KEY")
-    base64 = os.getenv("IMAGE_BASE64")
+    base64 = input()
     main(base64, secret_id, secret_key)
