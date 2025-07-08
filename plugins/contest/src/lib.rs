@@ -10,6 +10,7 @@ use kovi::{
 
 pub(crate) mod contest;
 pub(crate) mod getter;
+pub(crate) mod retry;
 
 static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
 

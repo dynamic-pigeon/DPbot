@@ -1,4 +1,7 @@
-use std::sync::{Arc, LazyLock};
+use std::{
+    pin,
+    sync::{Arc, LazyLock},
+};
 
 use anyhow::{Ok, Result};
 use kovi::{
@@ -7,7 +10,7 @@ use kovi::{
 };
 use reqwest::Response;
 
-use crate::{CONFIG, contest::Contest};
+use crate::{CONFIG, contest::Contest, retry::retry};
 
 static LOCK: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
 
@@ -35,7 +38,7 @@ pub async fn fetch_contest() -> Result<Vec<Arc<Contest>>> {
             contest_name, config.username, config.api_key
         );
 
-        let res = fetch(url.as_str()).await?;
+        let res = retry(async move || fetch(&url).await, 3).await?;
         let body = res.json::<Value>().await?;
 
         let contests_data = match body {

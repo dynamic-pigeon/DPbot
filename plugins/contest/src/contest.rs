@@ -11,7 +11,7 @@ use kovi::{
 };
 use serde::Deserialize;
 
-use crate::today_utc;
+use crate::{retry::retry, today_utc};
 
 type ContestSet = Vec<Arc<Contest>>;
 
@@ -64,19 +64,14 @@ pub async fn get_all_contests() -> ContestSet {
 }
 
 pub async fn init() -> Result<usize> {
-    async {
-        for _ in 0..3 {
-            match update_contests().await {
-                Ok(f) => return Ok(f),
-                Err(e) => {
-                    error!("Failed to update contests: {}", e);
-                }
-            }
+    match retry(update_contests, 3).await {
+        Ok(_) => {}
+        Err(e) => {
+            send_to_super_admin(&format!("Contest 初始化失败: {}", e));
+            error!("Contest 初始化失败: {}", e);
+            return Err(e);
         }
-        send_to_super_admin("Failed to update contests").await;
-        Err(anyhow::anyhow!("Failed to update contests"))
     }
-    .await?;
 
     info!("Contest 加载完成");
 
@@ -178,7 +173,7 @@ fn seconds_to_str(seconds: i64) -> String {
     format!("{:02}h {:02}min", hour, minute)
 }
 
-async fn send_to_super_admin(msg: &str) {
+fn send_to_super_admin(msg: &str) {
     let bot = crate::BOT.get().unwrap().clone();
     bot.send_private_msg(bot.get_main_admin().unwrap(), msg);
 }
