@@ -2,7 +2,7 @@ use kovi::serde_json;
 
 use crate::{
     duel::challenge::Challenge,
-    sql::{POOL, utils::Commit, with_commit},
+    sql::{POOL, utils::Commit},
 };
 use anyhow::Result;
 

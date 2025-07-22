@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 use anyhow::Result;
 use kovi::log::debug;
 
-use utils::with_commit;
 
 pub(crate) mod duel;
 pub(crate) mod utils;

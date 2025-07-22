@@ -103,7 +103,8 @@ impl User {
             .await?
             .update_user(&self)
             .await?
-            .commit();
+            .commit()
+            .await?;
 
         Ok(())
     }

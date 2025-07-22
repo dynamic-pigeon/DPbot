@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::duel::problem::Problem;
 use crate::sql::utils::Commit;
-use crate::sql::{POOL, with_commit};
+use crate::sql::POOL;
 use crate::utils::today_utc;
 
 pub trait CommitProblemExt {

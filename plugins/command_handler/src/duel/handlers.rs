@@ -6,7 +6,6 @@ use kovi::{
 };
 use rand::seq::IndexedRandom;
 
-use anyhow::Result;
 
 use crate::{
     duel::problem::Problem,

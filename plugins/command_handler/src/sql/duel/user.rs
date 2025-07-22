@@ -1,6 +1,6 @@
 use crate::{
     duel::user::User,
-    sql::{POOL, utils::Commit, with_commit},
+    sql::{POOL, utils::Commit},
 };
 use anyhow::{Ok, Result};
 

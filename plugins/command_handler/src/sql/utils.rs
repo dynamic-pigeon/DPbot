@@ -51,8 +51,12 @@ impl Commit {
 impl Drop for Commit {
     fn drop(&mut self) {
         if let Some(tx) = self.tx.take() {
-            // Rollback if not committed
-            let _ = tx.rollback();
+            // 如果 Commit 没有被 commit 或 rollback，析构时会自动回滚
+            kovi::tokio::spawn(async move {
+                if let Err(e) = tx.rollback().await {
+                    eprintln!("Failed to rollback transaction: {}", e);
+                }
+            });
         }
     }
 }
