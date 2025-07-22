@@ -1,5 +1,3 @@
-use std::future::Future;
-
 pub async fn retry<T, E, F>(mut f: F, max_retry_times: usize) -> Result<T, E>
 where
     F: AsyncFnMut() -> Result<T, E>,
@@ -17,7 +15,5 @@ where
             }
         }
     }
-    Err(err.unwrap_or_else(|| {
-        panic!("All retries failed, but no error was captured. This should not happen.");
-    }))
+    Err(err.expect("All retries failed, but no error was captured. This should not happen."))
 }

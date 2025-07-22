@@ -1,6 +1,6 @@
 use crate::{
     duel::user::User,
-    sql::{POOL, with_commit},
+    sql::{POOL, utils::Commit, with_commit},
 };
 use anyhow::{Ok, Result};
 
@@ -17,69 +17,6 @@ pub async fn get_user(qq: i64) -> Result<User> {
     .await?;
 
     Ok(res)
-}
-
-pub async fn update_user(user: &User) -> Result<()> {
-    with_commit(async |trans| {
-        let _ = sqlx::query(
-            r#"
-            UPDATE user SET rating = ?, cf_id = ?, daily_score = ?, last_daily = ? WHERE qq = ?
-            "#,
-        )
-        .bind(user.rating)
-        .bind(&user.cf_id)
-        .bind(user.daily_score)
-        .bind(&user.last_daily)
-        .bind(user.qq)
-        .execute(&mut **trans)
-        .await?;
-
-        Ok(())
-    })
-    .await
-}
-
-pub async fn update_two_user_rating(user1: &User, user2: &User) -> Result<()> {
-    with_commit(async |trans| {
-        let _ = sqlx::query(
-            r#"
-            UPDATE user SET rating = ? WHERE qq = ?
-            "#,
-        )
-        .bind(user1.rating)
-        .bind(user1.qq)
-        .execute(&mut **trans)
-        .await?;
-
-        let _ = sqlx::query(
-            r#"
-            UPDATE user SET rating = ? WHERE qq = ?
-            "#,
-        )
-        .bind(user2.rating)
-        .bind(user2.qq)
-        .execute(&mut **trans)
-        .await?;
-
-        Ok(())
-    })
-    .await
-}
-
-pub async fn add_user(qq: i64) -> Result<User> {
-    with_commit(async |trans| {
-        let _ = sqlx::query(
-            r#"
-            INSERT INTO user (qq, rating, cf_id, daily_score, last_daily) VALUES (?, 1500, NULL, 0, "")
-            "#,
-        )
-        .bind(qq)
-        .execute(&mut **trans)
-        .await?;
-
-        Ok(User::new(qq, 1500, None, 0, "".to_string()))
-    })
-    .await
 }
 
 pub async fn get_top_20_daily() -> Result<Vec<User>> {
@@ -108,4 +45,71 @@ pub async fn get_top_20_ranklist() -> Result<Vec<User>> {
     .await?;
 
     Ok(users)
+}
+
+pub trait CommitUserExt {
+    async fn update_user(&mut self, user: &User) -> Result<&mut Self>;
+    async fn update_user_rating(&mut self, user: &User) -> Result<&mut Self>;
+    async fn add_user(&mut self, qq: i64) -> Result<&mut Self>;
+}
+
+impl CommitUserExt for Commit {
+    async fn update_user(&mut self, user: &User) -> Result<&mut Self> {
+        let trans = self
+            .tx
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
+
+        let _ = sqlx::query(
+            r#"
+            UPDATE user SET rating = ?, cf_id = ?, daily_score = ?, last_daily = ? WHERE qq = ?
+            "#,
+        )
+        .bind(user.rating)
+        .bind(&user.cf_id)
+        .bind(user.daily_score)
+        .bind(&user.last_daily)
+        .bind(user.qq)
+        .execute(&mut **trans)
+        .await?;
+
+        Ok(self)
+    }
+
+    async fn update_user_rating(&mut self, user: &User) -> Result<&mut Self> {
+        let trans = self
+            .tx
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
+
+        let _ = sqlx::query(
+            r#"
+            UPDATE user SET rating = ? WHERE qq = ?
+            "#,
+        )
+        .bind(user.rating)
+        .bind(user.qq)
+        .execute(&mut **trans)
+        .await?;
+
+        Ok(self)
+    }
+
+    async fn add_user(&mut self, qq: i64) -> Result<&mut Self> {
+        let trans = self
+            .tx
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
+
+        let _ = sqlx::query(
+            r#"
+            INSERT INTO user (qq, rating, cf_id, daily_score, last_daily) VALUES (?, 1500, NULL, 0, "")
+            "#,
+        )
+        .bind(qq)
+        .execute(&mut **trans)
+        .await?;
+
+        Ok(self)
+    }
 }

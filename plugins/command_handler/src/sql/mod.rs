@@ -3,7 +3,10 @@ use std::sync::OnceLock;
 use anyhow::Result;
 use kovi::log::debug;
 
+use utils::with_commit;
+
 pub(crate) mod duel;
+pub(crate) mod utils;
 
 static POOL: OnceLock<sqlx::SqlitePool> = OnceLock::new();
 static PATH: OnceLock<String> = OnceLock::new();
@@ -54,30 +57,4 @@ pub async fn connect(path: &str) -> Result<()> {
     debug!("数据库连接成功: {}", path);
     POOL.get_or_init(|| pool);
     Ok(())
-}
-
-// 事务 commit 和 rollback
-async fn with_commit<F, T>(f: F) -> Result<T>
-where
-    F: for<'c> AsyncFnOnce(&'c mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<T>,
-{
-    let sql = POOL.get().unwrap();
-
-    debug!("开始事务");
-
-    let mut trans = sql.begin().await?;
-
-    let ret = match f(&mut trans).await {
-        Ok(ret) => ret,
-        Err(e) => {
-            trans.rollback().await?;
-            debug!("事务回滚");
-            return Err(e);
-        }
-    };
-
-    trans.commit().await?;
-
-    debug!("结束事务");
-    Ok(ret)
 }

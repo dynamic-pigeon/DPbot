@@ -1,6 +1,10 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use crate::{duel::problem::get_last_submission, sql, utils::today_utc};
+use crate::{
+    duel::problem::get_last_submission,
+    sql::{self, duel::user::CommitUserExt},
+    utils::today_utc,
+};
 use anyhow::Result;
 use kovi::{chrono, log::info, tokio::sync::RwLock};
 use sqlx::{FromRow, Row, sqlite::SqliteRow};
@@ -95,7 +99,11 @@ impl User {
 
         self.cf_id = Some(bind.cf_id);
 
-        sql::duel::user::update_user(self).await?;
+        sql::utils::Commit::start()
+            .await?
+            .update_user(&self)
+            .await?
+            .commit();
 
         Ok(())
     }

@@ -1,7 +1,4 @@
-use std::{
-    pin,
-    sync::{Arc, LazyLock},
-};
+use std::sync::{Arc, LazyLock};
 
 use anyhow::{Ok, Result};
 use kovi::{
@@ -41,12 +38,12 @@ pub async fn fetch_contest() -> Result<Vec<Arc<Contest>>> {
         let res = retry(async move || fetch(&url).await, 3).await?;
         let body = res.json::<Value>().await?;
 
-        let contests_data = match body {
-            Value::Object(mut map) => match map.remove("objects") {
-                Some(Value::Array(contests)) => contests,
-                _ => return Err(anyhow::anyhow!("Invalid response")),
-            },
-            _ => return Err(anyhow::anyhow!("Invalid response")),
+        let contests_data = if let Value::Object(mut map) = body
+            && let Some(Value::Array(contests)) = map.remove("objects")
+        {
+            contests
+        } else {
+            return Err(anyhow::anyhow!("Invalid response"));
         };
 
         contests.extend(

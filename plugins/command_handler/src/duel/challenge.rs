@@ -11,6 +11,9 @@ use sqlx::{Decode, Encode, FromRow, Row, Sqlite, Type};
 use crate::duel::problem::get_problems_by;
 use crate::error::SubmissionError;
 use crate::sql;
+use crate::sql::duel::challenge::CommitChallengeExt;
+use crate::sql::duel::user::CommitUserExt;
+use crate::sql::utils::Commit;
 use crate::utils::today_utc;
 
 use super::problem::{Problem, get_last_submission};
@@ -193,8 +196,14 @@ impl Challenge {
             .ok_or_else(|| anyhow::anyhow!("没有找到题目"))?;
         self.problem = Some(problem.as_ref().clone());
         self.status = ChallengeStatus::Ongoing;
-        sql::duel::challenge::change_status(self).await?;
-        sql::duel::challenge::change_problem(self).await?;
+        Commit::start()
+            .await?
+            .change_status(self)
+            .await?
+            .change_problem(self)
+            .await?
+            .commit()
+            .await?;
         Ok(Arc::clone(problem))
     }
 
@@ -222,7 +231,15 @@ impl Challenge {
         user1.rating = new_user1_rating;
         user2.rating = new_user2_rating;
 
-        sql::duel::user::update_two_user_rating(&user1, &user2).await?;
+        Commit::start()
+            .await?
+            .update_user_rating(&user1)
+            .await?
+            .update_user_rating(&user2)
+            .await?
+            .commit()
+            .await?;
+
         self.change_status(status).await?;
 
         Ok(())
@@ -258,7 +275,15 @@ impl Challenge {
         user1.rating = new_user1_rating;
         user2.rating = new_user2_rating;
 
-        sql::duel::user::update_two_user_rating(&user1, &user2).await?;
+        Commit::start()
+            .await?
+            .update_user_rating(&user1)
+            .await?
+            .update_user_rating(&user2)
+            .await?
+            .commit()
+            .await?;
+
         self.change_status(status).await?;
 
         Ok(())
@@ -286,7 +311,7 @@ impl Challenge {
             .and_then(|p| serde_json::from_value(p).ok())
             .ok_or(anyhow::anyhow!("获取题目信息失败"))?;
 
-        if problem.same_problem(self.problem.as_ref().unwrap()) {
+        if !problem.same_problem(self.problem.as_ref().unwrap()) {
             return Ok((false, 0));
         }
 
@@ -305,7 +330,13 @@ impl Challenge {
 
     pub async fn change_status(&mut self, status: ChallengeStatus) -> Result<()> {
         self.status = status;
-        sql::duel::challenge::change_status(self).await
+        Commit::start()
+            .await?
+            .change_status(self)
+            .await?
+            .commit()
+            .await?;
+        Ok(())
     }
 
     pub async fn change(&mut self) -> Result<Arc<Problem>> {
@@ -314,7 +345,12 @@ impl Challenge {
             .choose(&mut rand::rng())
             .ok_or_else(|| anyhow::anyhow!("没有找到题目"))?;
         self.problem = Some(problem.as_ref().clone());
-        sql::duel::challenge::change_problem(self).await?;
+        Commit::start()
+            .await?
+            .change_problem(self)
+            .await?
+            .commit()
+            .await?;
         Ok(Arc::clone(problem))
     }
 }
@@ -357,7 +393,13 @@ pub async fn get_ongoing_challenge_by_user(user_id: i64) -> Result<Challenge> {
 }
 
 pub async fn add_challenge(challenge: &Challenge) -> Result<()> {
-    sql::duel::challenge::add_challenge(challenge).await
+    Commit::start()
+        .await?
+        .add_challenge(challenge)
+        .await?
+        .commit()
+        .await?;
+    Ok(())
 }
 
 pub async fn get_challenge_by_user2(user_id: i64) -> Result<Challenge> {
@@ -389,5 +431,11 @@ pub async fn get_challenge(user1: i64, user2: i64) -> Result<Challenge> {
 }
 
 pub async fn remove_challenge(challenge: &Challenge) -> Result<()> {
-    sql::duel::challenge::remove_challenge(challenge).await
+    Commit::start()
+        .await?
+        .remove_challenge(challenge)
+        .await?
+        .commit()
+        .await?;
+    Ok(())
 }

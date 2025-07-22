@@ -6,9 +6,15 @@ use kovi::{
 };
 use rand::seq::IndexedRandom;
 
+use anyhow::Result;
+
 use crate::{
     duel::problem::Problem,
-    sql,
+    sql::{
+        self,
+        duel::{challenge::CommitChallengeExt, user::CommitUserExt},
+        utils::Commit,
+    },
     utils::{IdOrText, today_utc, user_id_or_text},
 };
 
@@ -229,7 +235,17 @@ pub async fn daily_finish(event: &MsgEvent) {
     user.daily_score += daily_problem.rating.unwrap();
     user.last_daily = now;
 
-    match sql::duel::user::update_user(&user).await {
+    match async {
+        Commit::start()
+            .await?
+            .update_user(&user)
+            .await?
+            .commit()
+            .await?;
+        anyhow::Ok(())
+    }
+    .await
+    {
         Ok(_) => {
             event.reply(format!(
                 "你今天完成了每日任务，获得了 {} 分\n你现在的总分为 {}",
@@ -336,7 +352,10 @@ pub async fn change(event: &MsgEvent) {
 
                 event.reply(problem);
 
-                sql::duel::challenge::change_problem(&challenge)
+                Commit::start()
+                    .await
+                    .unwrap()
+                    .change_problem(&challenge)
                     .await
                     .unwrap();
             }
@@ -532,11 +551,21 @@ pub async fn bind(event: &MsgEvent, args: &[String]) {
     let mut user = match crate::sql::duel::user::get_user(event.user_id).await {
         Ok(user) => user,
         Err(_) => {
-            let Ok(user) = crate::sql::duel::user::add_user(event.user_id).await else {
+            let Ok(_) = async {
+                Commit::start()
+                    .await?
+                    .add_user(event.user_id)
+                    .await?
+                    .commit()
+                    .await?;
+                anyhow::Ok(())
+            }
+            .await
+            else {
                 event.reply("未知错误");
                 return;
             };
-            user
+            sql::duel::user::get_user(event.user_id).await.unwrap()
         }
     };
 

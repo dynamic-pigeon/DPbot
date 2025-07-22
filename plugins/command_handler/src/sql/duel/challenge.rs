@@ -2,33 +2,31 @@ use kovi::serde_json;
 
 use crate::{
     duel::challenge::Challenge,
-    sql::{POOL, with_commit},
+    sql::{POOL, utils::Commit, with_commit},
 };
 use anyhow::Result;
 
-pub async fn get_ongoing_challenges() -> Result<Vec<Challenge>> {
-    let sql = POOL.get().unwrap();
-
-    let challenges: Vec<Challenge> = sqlx::query_as(
-        r#"
-        SELECT * FROM duel WHERE status > 0
-        "#,
-    )
-    .fetch_all(sql)
-    .await?;
-
-    Ok(challenges)
+pub trait CommitChallengeExt {
+    async fn add_challenge(&mut self, challenge: &Challenge) -> Result<&mut Self>;
+    async fn change_problem(&mut self, challenge: &Challenge) -> Result<&mut Self>;
+    async fn remove_challenge(&mut self, challenge: &Challenge) -> Result<&mut Self>;
+    async fn change_status(&mut self, chall: &Challenge) -> Result<&mut Self>;
 }
 
-pub async fn add_challenge(challenge: &Challenge) -> Result<()> {
-    let time = challenge.time.to_rfc3339();
-    let problem = challenge
-        .problem
-        .as_ref()
-        .map(|problem| serde_json::to_string(problem).unwrap());
+impl CommitChallengeExt for Commit {
+    async fn add_challenge(&mut self, challenge: &Challenge) -> Result<&mut Self> {
+        let trans = self
+            .tx
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
 
-    with_commit(async |trans| {
-        sqlx::query(
+        let time = challenge.time.to_rfc3339();
+        let problem = challenge
+            .problem
+            .as_ref()
+            .map(|problem| serde_json::to_string(problem).unwrap());
+
+        let _ = sqlx::query(
             r#"
             INSERT INTO duel (user1, user2, time, tags, rating, problem, status) VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
@@ -43,22 +41,24 @@ pub async fn add_challenge(challenge: &Challenge) -> Result<()> {
         .execute(&mut **trans)
         .await?;
 
-        Ok(())
-    })
-    .await
-}
+        Ok(self)
+    }
 
-pub async fn change_problem(challenge: &Challenge) -> Result<()> {
-    let problem = challenge
-        .problem
-        .as_ref()
-        .map(|problem| serde_json::to_string(problem).unwrap());
+    async fn change_problem(&mut self, challenge: &Challenge) -> Result<&mut Self> {
+        let trans = self
+            .tx
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
 
-    with_commit(async |trans| {
-        sqlx::query(
+        let problem = challenge
+            .problem
+            .as_ref()
+            .map(|problem| serde_json::to_string(problem).unwrap());
+
+        let _ = sqlx::query(
             r#"
-        UPDATE duel SET problem = ? WHERE user1 = ? AND user2 = ? AND time = ?
-        "#,
+            UPDATE duel SET problem = ? WHERE user1 = ? AND user2 = ? AND time = ?
+            "#,
         )
         .bind(problem)
         .bind(challenge.user1)
@@ -67,15 +67,16 @@ pub async fn change_problem(challenge: &Challenge) -> Result<()> {
         .execute(&mut **trans)
         .await?;
 
-        Ok(())
-    })
-    .await
-}
+        Ok(self)
+    }
 
-#[allow(dead_code)]
-pub async fn remove_challenge(challenge: &Challenge) -> Result<()> {
-    with_commit(async |trans| {
-        sqlx::query(
+    async fn remove_challenge(&mut self, challenge: &Challenge) -> Result<&mut Self> {
+        let trans = self
+            .tx
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
+
+        let _ = sqlx::query(
             r#"
             DELETE FROM duel WHERE user1 = ? AND user2 = ? AND time = ?
             "#,
@@ -86,9 +87,29 @@ pub async fn remove_challenge(challenge: &Challenge) -> Result<()> {
         .execute(&mut **trans)
         .await?;
 
-        Ok(())
-    })
-    .await
+        Ok(self)
+    }
+
+    async fn change_status(&mut self, chall: &Challenge) -> Result<&mut Self> {
+        let trans = self
+            .tx
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
+
+        let _ = sqlx::query(
+            r#"
+            UPDATE duel SET status = ? WHERE user1 = ? AND user2 = ? AND time = ?
+            "#,
+        )
+        .bind(chall.status)
+        .bind(chall.user1)
+        .bind(chall.user2)
+        .bind(chall.time.to_rfc3339())
+        .execute(&mut **trans)
+        .await?;
+
+        Ok(self)
+    }
 }
 
 pub async fn get_chall_ongoing_by_user(user_id: i64) -> Result<Challenge> {
@@ -122,21 +143,16 @@ pub async fn get_chall_ongoing_by_2user(user1: i64, user2: i64) -> Result<Challe
     Ok(res)
 }
 
-pub async fn change_status(chall: &Challenge) -> Result<()> {
-    with_commit(async |trans| {
-        sqlx::query(
-            r#"
-            UPDATE duel SET status = ? WHERE user1 = ? AND user2 = ? AND time = ?
-            "#,
-        )
-        .bind(chall.status)
-        .bind(chall.user1)
-        .bind(chall.user2)
-        .bind(chall.time.to_rfc3339())
-        .execute(&mut **trans)
-        .await?;
+pub async fn get_ongoing_challenges() -> Result<Vec<Challenge>> {
+    let sql = POOL.get().unwrap();
 
-        Ok(())
-    })
-    .await
+    let challenges: Vec<Challenge> = sqlx::query_as(
+        r#"
+        SELECT * FROM duel WHERE status > 0
+        "#,
+    )
+    .fetch_all(sql)
+    .await?;
+
+    Ok(challenges)
 }

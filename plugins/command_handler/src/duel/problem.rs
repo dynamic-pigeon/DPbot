@@ -9,6 +9,8 @@ use rand::seq::{IndexedRandom, IteratorRandom};
 
 use crate::duel::config::MAX_DAILY_RATING;
 use crate::error::SubmissionError;
+use crate::sql::duel::problem::CommitProblemExt;
+use crate::sql::utils::Commit;
 
 use super::config::TAGS;
 use crate::utils::fetch;
@@ -344,7 +346,14 @@ pub async fn get_daily_problem() -> Result<Arc<Problem>, Error> {
                 Some(problem) => problem,
                 None => return Err(anyhow::anyhow!("没有找到题目，请稍后再试")),
             };
-            crate::sql::duel::problem::set_daily_problem(&problem).await?;
+
+            Commit::start()
+                .await?
+                .set_daily_problem(&problem)
+                .await?
+                .commit()
+                .await?;
+
             Ok(problem)
         }
     }
