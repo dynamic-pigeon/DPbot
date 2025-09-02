@@ -15,7 +15,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 
 mod ocr;
 
-static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
+static CONFIG: OnceLock<Config> = OnceLock::new();
 
 #[kovi::plugin]
 async fn main() {
@@ -27,7 +27,7 @@ async fn main() {
 
     debug!("config: {:?}", config);
 
-    CONFIG.get_or_init(|| Arc::new(config));
+    CONFIG.get_or_init(|| config);
 
     let db_path = path.join("word_cloud.db");
 
@@ -168,7 +168,12 @@ async fn make_word_cloud(
         .join(" ");
 
     let msg = jieba_rs::Jieba::new();
-    let messages = msg.cut(&messages, true).join(" ");
+    let messages = msg
+        .cut(&messages, true)
+        .into_iter()
+        .filter(|s| s.chars().count() > 1)
+        .collect::<Vec<_>>()
+        .join(" ");
 
     let wc_cli = CONFIG.get().unwrap().wordcloud_cli_path.clone();
     let mask_path = path.join("mask.jpg");
@@ -188,10 +193,8 @@ async fn make_word_cloud(
         .stderr(Stdio::piped())
         .spawn()?;
 
-    {
-        let stdin = child.stdin.as_mut().unwrap();
-        stdin.write_all(messages.as_bytes()).await?;
-    }
+    let stdin = child.stdin.as_mut().unwrap();
+    stdin.write_all(messages.as_bytes()).await?;
 
     let output = child.wait_with_output().await?;
 

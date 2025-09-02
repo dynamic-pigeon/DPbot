@@ -65,6 +65,7 @@ impl<'r> FromRow<'r, SqliteRow> for User {
 }
 
 impl User {
+    #[allow(dead_code)]
     pub fn new(
         qq: i64,
         rating: i64,

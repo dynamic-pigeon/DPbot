@@ -12,7 +12,7 @@ pub(crate) mod contest;
 pub(crate) mod getter;
 pub(crate) mod retry;
 
-static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
+static CONFIG: OnceLock<Config> = OnceLock::new();
 
 static BOT: OnceLock<Arc<RuntimeBot>> = OnceLock::new();
 
@@ -24,14 +24,14 @@ async fn main() {
 
     let config_path = data_path.join("config.json");
     let config = load_json_data(Default::default(), config_path).unwrap();
-    CONFIG.get_or_init(|| Arc::new(config));
+    CONFIG.get_or_init(|| config);
 
     plugin::cron("0 8 * * *", || async {
         contest::daily_init().await;
     })
     .unwrap();
 
-    let _ = contest::init().await;
+    kovi::spawn(contest::init());
 
     plugin::on_msg(|event| async move {
         let Some(text) = event.borrow_text() else {

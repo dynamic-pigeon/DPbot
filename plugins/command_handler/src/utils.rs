@@ -9,8 +9,6 @@ use kovi::{
 use anyhow::{Error, Result};
 use kovi::serde_json::Value;
 
-static LOCK: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
-
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Config {
     pub py_analyzer_path: String,
@@ -29,11 +27,11 @@ pub enum IdOrText<'a> {
     At(i64),
 }
 
-pub fn user_id_or_text(text: &str) -> IdOrText {
+pub fn user_id_or_text(text: &str) -> Result<IdOrText<'_>> {
     if let Some(user_id) = text.strip_prefix("@") {
-        IdOrText::At(user_id.parse().unwrap())
+        Ok(IdOrText::At(user_id.parse()?))
     } else {
-        IdOrText::Text(text)
+        Ok(IdOrText::Text(text))
     }
 }
 
@@ -115,6 +113,7 @@ pub(crate) async fn fetch(url: &str) -> Result<reqwest::Response> {
 /// ## 参数
 /// - `f`: Future
 pub(crate) async fn wait<F: Future>(future: F) -> F::Output {
+    static LOCK: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
     let lock = LOCK.lock().await;
     kovi::spawn(async move {
         let _ = lock;

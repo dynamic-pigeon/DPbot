@@ -9,9 +9,8 @@ use reqwest::Response;
 
 use crate::{CONFIG, contest::Contest, retry::retry};
 
-static LOCK: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
-
 async fn fetch(url: &str) -> Result<Response> {
+    static LOCK: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
     // 同时只有一个请求可以发出
     let lock = LOCK.lock().await;
     kovi::spawn(async move {

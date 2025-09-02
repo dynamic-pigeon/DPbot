@@ -6,7 +6,6 @@ use kovi::{
 };
 use rand::seq::IndexedRandom;
 
-
 use crate::{
     duel::problem::Problem,
     sql::{
@@ -470,7 +469,7 @@ pub async fn accept(event: &MsgEvent) {
 pub async fn challenge(event: &MsgEvent, args: &[String]) {
     let user1 = event.user_id;
     let user2 = match args.get(2).and_then(|s| match user_id_or_text(s) {
-        IdOrText::At(user_id) => Some(user_id),
+        Ok(IdOrText::At(user_id)) => Some(user_id),
         _ => None,
     }) {
         Some(user2) => user2,

@@ -32,8 +32,10 @@ pub struct Challenge {
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum ChallengeStatus {
     Ongoing,
+    /// 0 表示 user1 获胜，1 表示 user2 获胜
     Finished(i64),
     Pending,
+    /// 重新选题，为发起换题者的 id
     ChangeProblem(i64),
 }
 

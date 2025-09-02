@@ -86,31 +86,27 @@ async fn get_ocr(img_base64: &str) -> Result<String> {
     } else {
         let req = serde_json::from_slice(&output.stdout)?;
 
-        let result = match req {
-            serde_json::Value::Object(mut res) => match res.remove("TextDetections") {
-                Some(serde_json::Value::Array(res)) => res
-                    .into_iter()
-                    .filter_map(|item| {
-                        if let serde_json::Value::Object(mut item_map) = item {
-                            if let Some(serde_json::Value::String(text)) =
-                                item_map.remove("DetectedText")
-                            {
-                                return Some(text);
-                            }
-                        }
-                        None
-                    })
-                    .fold(String::new(), |mut str, text| {
-                        if !str.is_empty() {
-                            str.push(' ');
-                        }
-                        str.push_str(&text);
-                        str
-                    }),
-                _ => return Err(anyhow::anyhow!("Invalid response format")),
-            },
-            _ => return Err(anyhow::anyhow!("Invalid response format")),
+        let arr = if let serde_json::Value::Object(mut res) = req
+            && let Some(serde_json::Value::Array(arr)) = res.remove("TextDetections")
+        {
+            arr
+        } else {
+            return Err(anyhow::anyhow!("Invalid response format"));
         };
+
+        let result = arr
+            .into_iter()
+            .filter_map(|item| {
+                if let serde_json::Value::Object(mut item_map) = item
+                    && let Some(serde_json::Value::String(text)) = item_map.remove("DetectedText")
+                {
+                    return Some(text);
+                }
+
+                None
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
 
         Ok(result)
     }

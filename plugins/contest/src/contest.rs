@@ -15,7 +15,7 @@ use crate::{retry::retry, today_utc};
 
 type ContestSet = Vec<Arc<Contest>>;
 
-pub(crate) static CONTESTS: LazyLock<RwLock<Arc<ContestSet>>> =
+static CONTESTS: LazyLock<RwLock<Arc<ContestSet>>> =
     LazyLock::new(|| RwLock::new(Arc::new(Vec::new())));
 
 #[allow(dead_code)]
@@ -49,7 +49,10 @@ pub async fn get_all_contests() -> ContestSet {
     if CONTESTS.read().await.is_empty() {
         init().await.unwrap();
     }
-    let contests = CONTESTS.read().await.clone();
+    let contests = {
+        let contests = CONTESTS.read().await;
+        Arc::clone(&contests)
+    };
     let now = kovi::chrono::Utc::now();
     contests
         .iter()
@@ -75,7 +78,10 @@ pub async fn init() -> Result<usize> {
 
     info!("Contest 加载完成");
 
-    let contests = CONTESTS.read().await.clone();
+    let contests = {
+        let contests = CONTESTS.read().await;
+        Arc::clone(&contests)
+    };
     let now = today_utc();
     let mut map: HashMap<_, Vec<Arc<Contest>>> = HashMap::new();
     let offset = FixedOffset::east_opt(8 * 3600).unwrap();
@@ -97,28 +103,35 @@ pub async fn init() -> Result<usize> {
 
     for (time, contests) in map {
         count += contests.len();
-        for sub_time in config.notify_time.iter() {
-            let mut msg = format!("选手注意，以下比赛还有不到 {} 分钟就要开始了：", sub_time);
-            for contest in contests.iter() {
-                let add = format!("\n\n{}\n{}", contest.event, contest.href);
 
-                msg.push_str(&add);
-            }
+        let mut contest_msg = String::new();
+        for contest in contests.iter() {
+            let add = format!("\n\n{}\n{}", contest.event, contest.href);
+
+            contest_msg.push_str(&add);
+        }
+
+        for sub_time in config.notify_time.iter() {
             let start = time;
             let now = today_utc();
 
             let notify_time = start - chrono::Duration::minutes(*sub_time);
 
-            info!(
-                "{} contests are going to start at {}.",
-                contests.len(),
-                notify_time
-            );
-
             let duration = notify_time - now;
             if duration.num_minutes() < 0 {
                 continue;
             }
+
+            let msg = format!(
+                "选手注意，以下比赛还有不到 {} 分钟就要开始了：{}",
+                sub_time, contest_msg
+            );
+
+            info!(
+                "{} contests are going to notify at {}.",
+                contests.len(),
+                notify_time
+            );
 
             kovi::spawn(async move {
                 kovi::tokio::time::sleep(duration.to_std().unwrap()).await;
@@ -174,6 +187,6 @@ fn seconds_to_str(seconds: i64) -> String {
 }
 
 fn send_to_super_admin(msg: &str) {
-    let bot = crate::BOT.get().unwrap().clone();
+    let bot = crate::BOT.get().unwrap();
     bot.send_private_msg(bot.get_main_admin().unwrap(), msg);
 }

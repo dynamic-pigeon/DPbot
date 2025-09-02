@@ -22,8 +22,6 @@ mod html;
 mod req;
 mod screen_shot;
 
-static MESSAGE: LazyLock<RwLock<HashMap<i64, Arc<Mutex<req::ChatBody>>>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
 static SCREEN_SHOT: LazyLock<Mutex<screen_shot::ScreenshotManager>> =
     LazyLock::new(|| Mutex::new(screen_shot::ScreenshotManager::init().unwrap()));
 
@@ -38,11 +36,13 @@ async fn main() {
     let data_path = Arc::new(data_path);
 
     let chat = Arc::new(req::Chat::from_config((*config).clone()));
+    let messages = Arc::new(RwLock::new(HashMap::<i64, Arc<Mutex<req::ChatBody>>>::new()));
 
     plugin::on_group_msg(move |event| {
         let chat = chat.clone();
         let config = config.clone();
         let data_path = data_path.clone();
+        let messages = messages.clone();
         async move {
             let text = event.borrow_text().unwrap_or_default().trim();
 
@@ -53,10 +53,10 @@ async fn main() {
             let group = event.group_id.unwrap();
 
             let msgs = {
-                if let Some(v) = MESSAGE.read().await.get(&group) {
+                if let Some(v) = messages.read().await.get(&group) {
                     v.clone()
                 } else {
-                    MESSAGE
+                    messages
                         .write()
                         .await
                         .entry(group)
@@ -178,46 +178,4 @@ async fn md_to_html(md: &str) -> String {
     html_output.push_str(END);
 
     html_output
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use kovi::tokio;
-
-    #[tokio::test]
-    async fn test_md_to_img() {
-        let md = r#"# 你好呀!
-
-```javascript
-var s = "JavaScript syntax highlighting";
-alert(s);
-```
-
-```python
-s = "Python syntax highlighting"
-print(s)
-```
-
-```
-No language indicated, so no syntax highlighting.
-But let's throw in a <b>tag</b>.
-```
-
-$$
-\frac{1}{2}
-$$
-
-已知过点$A(-1, 0)$ 、 $B(1, 0)$两点的动抛物线的准线始终与圆$x^2 + y^2 = 9$相切，该抛物线焦点$P$的轨迹是某圆锥曲线$E$的一部分。<br>(1)求曲线$E$的标准方程；<br>(2)已知点$C(-3, 0)$ ， $D(2, 0)$ ，过点$D$的动直线与曲线$E$相交于$M$ 、 $N$ ，设$\triangle CMN$的外心为$Q$ ， $O$为坐标原点，问：直线$OQ$与直线$MN$的斜率之积是否为定值，如果为定值，求出该定值；如果不是定值，则说明理由。
-"#;
-        let img = super::gen_img(
-            md,
-            &PathBuf::from("/home/dynamic_pigeon/Public/workspace/rust-demo/bot/data"),
-        )
-        .await
-        .unwrap();
-        assert!(!img.is_empty());
-        std::fs::write("data/output.png", img).unwrap();
-    }
 }

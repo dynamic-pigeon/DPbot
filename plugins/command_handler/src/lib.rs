@@ -13,7 +13,7 @@ pub(crate) mod sql;
 pub(crate) mod utils;
 
 static PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
-static CONFIG: OnceLock<Arc<utils::Config>> = OnceLock::new();
+static CONFIG: OnceLock<utils::Config> = OnceLock::new();
 
 #[kovi::plugin]
 async fn main() {
@@ -29,7 +29,7 @@ async fn main() {
 
     let config_path = data_path.join("config.json");
     let config = load_json_data(Default::default(), config_path).unwrap();
-    CONFIG.get_or_init(|| Arc::new(config));
+    CONFIG.get_or_init(|| config);
 
     let command_path = data_path.join("command.json");
 

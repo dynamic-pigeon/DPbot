@@ -291,20 +291,17 @@ async fn fetch_problems() -> Result<ProblemSet, Error> {
         return Err(anyhow::anyhow!("Failed to fetch problems"));
     };
 
-    let problems = match body {
-        Value::Object(mut map) => match map.remove("result") {
-            Some(Value::Object(mut map)) => match map.remove("problems") {
-                Some(Value::Array(problems)) => problems
-                    .into_iter()
-                    .map(serde_json::from_value)
-                    .filter_map(Result::ok)
-                    .map(Arc::new)
-                    .collect::<Vec<_>>(),
-                _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
-            },
-            _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
-        },
-        _ => return Err(anyhow::anyhow!("Failed to fetch problems")),
+    let problems = if let Value::Object(mut map) = body
+        && let Some(Value::Object(mut result)) = map.remove("result")
+        && let Some(Value::Array(problems)) = result.remove("problems")
+    {
+        problems
+            .into_iter()
+            .filter_map(|v| serde_json::from_value(v).ok())
+            .map(Arc::new)
+            .collect::<Vec<_>>()
+    } else {
+        return Err(anyhow::anyhow!("Failed to fetch problems"));
     };
 
     Ok(problems)

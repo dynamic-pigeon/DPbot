@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 use anyhow::Result;
 use kovi::log::debug;
 
-
 pub(crate) mod duel;
 pub(crate) mod utils;
 
@@ -12,6 +11,7 @@ static PATH: OnceLock<String> = OnceLock::new();
 
 /// 初始化数据库
 /// 有且只有一次，在插件启动时调用
+/// 理论上多次调用也没有问题，就是会空转，然后白耗费时间
 pub async fn init(path: &str) -> Result<()> {
     PATH.get_or_init(|| path.to_string());
     connect(path).await?;

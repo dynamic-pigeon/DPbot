@@ -8,9 +8,15 @@ use crate::{
 };
 
 pub async fn rating(event: &MsgEvent, args: &[String]) {
-    let user = args.get(2).map(|s| user_id_or_text(s)).unwrap();
+    let user = match args.get(2).map(|s| user_id_or_text(s)).unwrap() {
+        Ok(v) => v,
+        Err(_) => {
+            event.reply("参数非法");
+            return;
+        }
+    };
 
-    let cf_id = match user_cf_id(&user).await {
+    let cf_id = match get_cf_id(&user).await {
         Ok(cf_id) => cf_id,
         Err(e) => {
             event.reply(e.to_string());
@@ -56,9 +62,15 @@ pub async fn rating(event: &MsgEvent, args: &[String]) {
 }
 
 pub async fn analyze(event: &MsgEvent, args: &[String]) {
-    let user = args.get(2).map(|s| user_id_or_text(s)).unwrap();
+    let user = match args.get(2).map(|s| user_id_or_text(s)).unwrap() {
+        Ok(v) => v,
+        Err(_) => {
+            event.reply("参数非法");
+            return;
+        }
+    };
 
-    let cf_id = match user_cf_id(&user).await {
+    let cf_id = match get_cf_id(&user).await {
         Ok(cf_id) => cf_id,
         Err(e) => {
             event.reply(e.to_string());
@@ -97,13 +109,13 @@ pub async fn analyze(event: &MsgEvent, args: &[String]) {
         return;
     }
 
-    let image = output.stdout;
-    let image = STANDARD.encode(image);
+    let image_raw = output.stdout;
+    let image = STANDARD.encode(image_raw);
 
     event.reply(Message::new().add_image(&format!("base64://{}", image)));
 }
 
-async fn user_cf_id(uit: &IdOrText<'_>) -> Result<String> {
+async fn get_cf_id(uit: &IdOrText<'_>) -> Result<String> {
     match uit {
         IdOrText::At(qq) => {
             let user = crate::sql::duel::user::get_user(*qq)
