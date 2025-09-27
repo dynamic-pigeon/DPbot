@@ -18,9 +18,8 @@ use crate::utils::fetch;
 type ProblemSet = Vec<Arc<Problem>>;
 
 const URL: &str = "https://codeforces.com/api/problemset.problems";
-static PROBLEMS: LazyLock<RwLock<Option<Arc<ProblemSet>>>> = LazyLock::new(|| RwLock::new(None));
-
-static DAILY_LOC: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+static PROBLEMS: LazyLock<RwLock<Arc<ProblemSet>>> =
+    LazyLock::new(|| RwLock::new(Arc::new(Vec::new())));
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct Problem {
@@ -174,7 +173,7 @@ async fn filter_help<'a>(
         };
 
         let submissions = get_recent_submissions(&cf_id).await.unwrap_or_default();
-        let seen = submissions
+        submissions
             .into_iter()
             .filter(|submission| {
                 submission.get("verdict") == Some(&Value::String("OK".to_string()))
@@ -185,8 +184,7 @@ async fn filter_help<'a>(
                 let index = problem.get("index")?.as_str()?.to_string();
                 Some((contest_id, index))
             })
-            .collect::<HashSet<_>>();
-        seen
+            .collect::<HashSet<_>>()
     } else {
         HashSet::new()
     };
@@ -229,9 +227,8 @@ pub async fn get_recent_submissions(cf_id: &str) -> Result<Vec<Value>, Submissio
         .json::<Value>()
         .await
         .map_err(|_| SubmissionError::FetchError)?;
-    let status = body["status"]
-        .as_str()
-        .ok_or_else(|| SubmissionError::FetchError)?;
+
+    let status = body["status"].as_str().ok_or(SubmissionError::FetchError)?;
     if status != "OK" {
         return Err(SubmissionError::FetchError);
     }
@@ -259,9 +256,7 @@ pub async fn get_last_submission(cf_id: &str) -> Result<Value, SubmissionError> 
         .await
         .map_err(|_| SubmissionError::FetchError)?;
 
-    let status = body["status"]
-        .as_str()
-        .ok_or_else(|| SubmissionError::FetchError)?;
+    let status = body["status"].as_str().ok_or(SubmissionError::FetchError)?;
     if status != "OK" {
         return Err(SubmissionError::FetchError);
     }
@@ -307,14 +302,21 @@ async fn fetch_problems() -> Result<ProblemSet, Error> {
     Ok(problems)
 }
 
+pub async fn refresh_problems() -> Result<(), Error> {
+    let problems = fetch_problems().await?;
+    let problems = Arc::new(problems);
+    *PROBLEMS.write().await = problems;
+    Ok(())
+}
+
 pub async fn get_problems() -> Result<Arc<ProblemSet>, Error> {
-    if let Some(ref problems) = *PROBLEMS.read().await {
-        Ok(Arc::clone(problems))
+    let problems = PROBLEMS.read().await;
+    if problems.is_empty() {
+        drop(problems);
+        refresh_problems().await?;
+        Ok(PROBLEMS.read().await.clone())
     } else {
-        let problems = fetch_problems().await?;
-        let problems = Arc::new(problems);
-        PROBLEMS.write().await.replace(Arc::clone(&problems));
-        Ok(problems)
+        Ok(problems.clone())
     }
 }
 
@@ -326,6 +328,7 @@ pub async fn random_problem() -> Result<Arc<Problem>, Error> {
 }
 
 pub async fn get_daily_problem() -> Result<Arc<Problem>, Error> {
+    static DAILY_LOC: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
     let _lock = DAILY_LOC.lock().await;
     match crate::sql::duel::problem::get_daily_problem().await {
         Ok(problem) => Ok(Arc::new(problem)),

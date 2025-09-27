@@ -5,17 +5,23 @@ import sys
 
 
 def fetch_json(url):
-    response = requests.get(url)
+    try:
+        response = requests.get(url)
+    except:
+        print("无法连接到 Codeforces 服务器", file=sys.stderr)
+        exit(-1)
     return response.json()
 
 
 def analyze(CF_id):
     json = fetch_json("https://codeforces.com/api/user.status?handle={}".format(CF_id))
     if json["status"] != "OK":
-        return json["comment"]
+        print(json["comment"], file=sys.stderr)
+        exit(-1)
     status = json["result"]
     if len(status) == 0:
-        return "没有提交记录"
+        print("没有提交记录", file=sys.stderr)
+        exit(-1)
     AC_status = []
     vis = set()
     for x in status:

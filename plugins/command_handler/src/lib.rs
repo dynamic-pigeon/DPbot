@@ -50,11 +50,9 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
     let text = mes_to_text(&event.message);
 
     let text = text.trim();
-    if !text.starts_with("/") {
+    let Some(text) = text.strip_prefix('/') else {
         return;
-    }
-
-    let text = &text[1..];
+    };
 
     let mut args = text
         .split_whitespace()

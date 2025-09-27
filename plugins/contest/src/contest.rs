@@ -68,15 +68,14 @@ pub async fn get_all_contests() -> ContestSet {
 
 pub async fn init() -> Result<usize> {
     match retry(update_contests, 3).await {
-        Ok(_) => {}
+        Ok(_) => {
+            info!("Contest 加载完成");
+        }
         Err(e) => {
             send_to_super_admin(&format!("Contest 初始化失败: {}", e));
-            error!("Contest 初始化失败: {}", e);
-            return Err(e);
+            error!("Contest 初始化失败: {}，继续使用之前的数据初始化", e);
         }
     }
-
-    info!("Contest 加载完成");
 
     let contests = {
         let contests = CONTESTS.read().await;

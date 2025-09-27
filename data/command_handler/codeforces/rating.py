@@ -8,34 +8,59 @@ from io import BytesIO
 
 
 def fetch_json(url):
-    response = requests.get(url)
+    try:
+        response = requests.get(url)
+    except:
+        print("无法连接到 Codeforces 服务器", file=sys.stderr)
+        exit(-1)
     return response.json()
 
 
 def contest(CF_id):
     json = fetch_json("https://codeforces.com/api/user.rating?handle={}".format(CF_id))
     if json["status"] != "OK":
-        return json["comment"]
+        print(json["comment"], file=sys.stderr)
+        exit(-1)
     con = json["result"]
     if len(con) == 0:
-        return "没有参赛记录"
+        print("没有参赛记录", file=sys.stderr)
+        exit(-1)
     x = []
     y = []
-    max_rating = 0
+    max_rating = float("-inf")
+    min_rating = float("inf")
     for contest in con:
-        y.append(contest["newRating"])
-        max_rating = max(max_rating, contest["newRating"])
+        rating = contest["newRating"]
+        y.append(rating)
+        max_rating = max(max_rating, rating)
+        min_rating = min(min_rating, rating)
         s = time.strftime(
             "%y/%m/%d", time.gmtime(contest["ratingUpdateTimeSeconds"] + 3600 * 8)
         )
         x.append(s)
 
     plt.clf()
-    plt.figure(dpi=300, figsize=(10, 5))
-
     plt.xlabel("Time")
     plt.ylabel("Rating")
-    plt.title("{}'s Rating change".format(CF_id))
+
+    _, ax = plt.subplots(dpi=300, figsize=(10, 5))
+
+    # 计算纵坐标显示范围
+    gap = (max_rating - min_rating) * 0.1
+
+    y_min = min_rating - gap
+    y_max = max_rating + gap
+    ax.set_ylim(y_min, y_max)
+
+    ax.axhspan(y_min, 1200, facecolor="#808080", alpha=0.5)  # 灰色
+    ax.axhspan(1200, 1400, facecolor="#008000", alpha=0.5)  # 绿色
+    ax.axhspan(1400, 1600, facecolor="#00C0C0", alpha=0.5)  # 青色
+    ax.axhspan(1600, 1900, facecolor="#0000FF", alpha=0.5)  # 蓝色
+    ax.axhspan(1900, 2100, facecolor="#800080", alpha=0.5)  # 紫色
+    ax.axhspan(2100, 2400, facecolor="#FFA500", alpha=0.5)  # 橙色
+    ax.axhspan(2400, y_max, facecolor="#FF0000", alpha=0.5)  # 红色
+
+    plt.title("{}'s rating change".format(CF_id))
 
     date = [datetime.strptime(s, "%y/%m/%d") for s in x]
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%y-%m-%d"))
@@ -50,7 +75,7 @@ def contest(CF_id):
         markersize=2,
     )
     plt.legend()
-    plt.tick_params(axis="x", rotation=30)
+    plt.tick_params(axis="x", rotation=20)
 
     with BytesIO() as buffer:
         plt.savefig(buffer, format="png")

@@ -14,7 +14,7 @@ async fn fetch(url: &str) -> Result<Response> {
     // 同时只有一个请求可以发出
     let lock = LOCK.lock().await;
     kovi::spawn(async move {
-        let _ = lock;
+        let _lock = lock;
         // 避免请求过快
         // 这里的时间可以根据实际情况调整
         kovi::tokio::time::sleep(std::time::Duration::from_secs(1)).await;

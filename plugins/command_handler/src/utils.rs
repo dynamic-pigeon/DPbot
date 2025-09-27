@@ -116,9 +116,8 @@ pub(crate) async fn wait<F: Future>(future: F) -> F::Output {
     static LOCK: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
     let lock = LOCK.lock().await;
     kovi::spawn(async move {
-        let _ = lock;
+        let _lock = lock;
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     });
-    let res = future.await;
-    res
+    future.await
 }

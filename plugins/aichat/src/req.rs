@@ -26,10 +26,15 @@ struct Message {
 }
 
 impl ChatBody {
-    pub fn new(model: String) -> Self {
+    pub fn new(model: String, sys_prompt: Option<String>) -> Self {
         Self {
             model,
-            messages: VecDeque::new(),
+            messages: VecDeque::from([Message {
+                role: "system".to_string(),
+                content: sys_prompt.unwrap_or_else(|| {
+                    "You are a helpful assistant that helps people find information.".to_string()
+                }),
+            }]),
             stream: false,
         }
     }
@@ -46,11 +51,16 @@ impl ChatBody {
     }
 
     fn remove_message(&mut self, cnt: usize) {
+        // 保留系统消息
+        let sys_msg = self.messages.pop_front();
         for _ in 0..cnt {
             if self.messages.is_empty() {
                 break;
             }
             self.messages.pop_front();
+        }
+        if let Some(msg) = sys_msg {
+            self.messages.push_front(msg);
         }
     }
 }

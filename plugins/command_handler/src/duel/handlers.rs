@@ -168,6 +168,7 @@ pub async fn give_up(event: &MsgEvent) {
     }
 }
 
+///  TODO: 剥离逻辑
 pub async fn daily_finish(event: &MsgEvent) {
     let user_id = event.user_id;
 

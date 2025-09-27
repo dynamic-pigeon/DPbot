@@ -12,7 +12,10 @@ use kovi::{
     bot::message::Segment,
     log::{debug, error, info},
     serde_json::json,
-    tokio::sync::{Mutex, RwLock},
+    tokio::{
+        self,
+        sync::{Mutex, RwLock},
+    },
     utils::load_json_data,
 };
 use pulldown_cmark::Options;
@@ -46,25 +49,24 @@ async fn main() {
         async move {
             let text = event.borrow_text().unwrap_or_default().trim();
 
-            if !text.starts_with("/chat") {
+            let Some(text) = text.strip_prefix("/chat") else {
                 return;
-            }
+            };
 
             let group = event.group_id.unwrap();
 
-            let msgs = {
-                if let Some(v) = messages.read().await.get(&group) {
-                    v.clone()
-                } else {
-                    messages
-                        .write()
-                        .await
-                        .entry(group)
-                        .or_insert(Arc::new(Mutex::new(req::ChatBody::new(
-                            config.model.clone(),
-                        ))))
-                        .clone()
-                }
+            let msgs = if let Some(v) = messages.read().await.get(&group) {
+                v.clone()
+            } else {
+                messages
+                    .write()
+                    .await
+                    .entry(group)
+                    .or_insert(Arc::new(Mutex::new(req::ChatBody::new(
+                        config.model.clone(),
+                        config.system_prompt.clone(),
+                    ))))
+                    .clone()
             };
 
             let mut msgs = match msgs.try_lock() {
@@ -76,8 +78,6 @@ async fn main() {
             };
 
             info!("chat: {}", text);
-
-            let text = text[5..].trim();
 
             let md = match chat.chat(text.to_string(), &mut msgs).await {
                 Ok(v) => v
@@ -134,12 +134,12 @@ async fn gen_img(md: &str, data_path: &PathBuf) -> Result<Vec<u8>> {
     let html = md_to_html(md).await;
 
     if !data_path.exists() {
-        std::fs::create_dir_all(data_path).unwrap();
+        tokio::fs::create_dir_all(data_path).await.unwrap();
     }
 
     let file_path = data_path.join("output.html");
 
-    std::fs::write(&file_path, html).unwrap();
+    tokio::fs::write(&file_path, html).await.unwrap();
 
     let png_data = match screenshot_lock.screenshot(&file_path).await {
         Ok(v) => v,

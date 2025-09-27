@@ -102,7 +102,7 @@ impl User {
 
         sql::utils::Commit::start()
             .await?
-            .update_user(&self)
+            .update_user(self)
             .await?
             .commit()
             .await?;

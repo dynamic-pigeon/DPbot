@@ -8,7 +8,7 @@ use anyhow::{Error, Result};
 use base64::{Engine, engine::general_purpose};
 use kovi::{
     log::debug,
-    serde_json,
+    serde_json::{self, Value},
     tokio::{self, io::AsyncWriteExt},
 };
 use moka::future::Cache;
@@ -86,8 +86,8 @@ async fn get_ocr(img_base64: &str) -> Result<String> {
     } else {
         let req = serde_json::from_slice(&output.stdout)?;
 
-        let arr = if let serde_json::Value::Object(mut res) = req
-            && let Some(serde_json::Value::Array(arr)) = res.remove("TextDetections")
+        let arr = if let Value::Object(mut res) = req
+            && let Some(Value::Array(arr)) = res.remove("TextDetections")
         {
             arr
         } else {
@@ -97,8 +97,8 @@ async fn get_ocr(img_base64: &str) -> Result<String> {
         let result = arr
             .into_iter()
             .filter_map(|item| {
-                if let serde_json::Value::Object(mut item_map) = item
-                    && let Some(serde_json::Value::String(text)) = item_map.remove("DetectedText")
+                if let Value::Object(mut item_map) = item
+                    && let Some(Value::String(text)) = item_map.remove("DetectedText")
                 {
                     return Some(text);
                 }
@@ -113,13 +113,13 @@ async fn get_ocr(img_base64: &str) -> Result<String> {
 }
 
 pub async fn ocr(img_url: &str) -> Result<Arc<String>> {
-    let base64 = Arc::new(get_img_base64(img_url).await?);
+    let base64 = Arc::new(get_img_base64_from_url(img_url).await?);
     let result = OCR_MEMORY.get_or_insert(base64).await?;
 
     Ok(result)
 }
 
-async fn get_img_base64(img_url: &str) -> Result<String> {
+async fn get_img_base64_from_url(img_url: &str) -> Result<String> {
     let req = reqwest::get(img_url).await?;
     if !req.status().is_success() {
         return Err(anyhow::anyhow!("Failed to get image"));
