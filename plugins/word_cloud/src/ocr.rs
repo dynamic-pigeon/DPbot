@@ -100,10 +100,10 @@ async fn get_ocr(img_base64: &str) -> Result<String> {
                 if let Value::Object(mut item_map) = item
                     && let Some(Value::String(text)) = item_map.remove("DetectedText")
                 {
-                    return Some(text);
+                    Some(text)
+                } else {
+                    None
                 }
-
-                None
             })
             .collect::<Vec<_>>()
             .join(" ");

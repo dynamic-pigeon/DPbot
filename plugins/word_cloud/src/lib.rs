@@ -5,7 +5,7 @@ use std::{
 };
 
 use kovi::{
-    Message, PluginBuilder as plugin, chrono,
+    Message, PluginBuilder as plugin, RuntimeBot, chrono,
     log::{self, debug, info},
     tokio::{self, io::AsyncWriteExt},
 };
@@ -49,6 +49,7 @@ async fn main() {
     let db_clone = Arc::clone(&db);
 
     let path = Arc::new(path);
+
     plugin::cron("0 21 * * *", move || {
         let path = Arc::clone(&path);
         let bot = Arc::clone(&bot);
@@ -58,26 +59,12 @@ async fn main() {
             let notify_group = &config.notify_group;
 
             for group_id in notify_group {
-                let image = match make_word_cloud(Arc::clone(&path), *group_id, &db).await {
-                    Ok(image) => image,
-                    Err(e) => {
-                        log::error!("make word cloud failed: {}, group_id: {}", e, group_id);
-                        bot.send_private_msg(
-                            bot.get_main_admin().unwrap(),
-                            format!("make word cloud failed: {}, group_id: {}", e, group_id),
-                        );
-                        continue;
-                    }
-                };
-
-                info!("send word cloud to group: {}", group_id);
-
-                let image = STANDARD.encode(&image);
-                let image = format!("base64://{}", image);
-                bot.send_group_msg(
-                    *group_id,
-                    Message::new().add_text("今日词云").add_image(&image),
-                );
+                let bot = Arc::clone(&bot);
+                let path = Arc::clone(&path);
+                let db = Arc::clone(&db);
+                kovi::spawn(async move {
+                    send_word_cloud(&bot, *group_id, &path, &db).await;
+                });
             }
 
             remove_before(&db, chrono::Utc::now() - chrono::Duration::days(7)).await;
@@ -88,7 +75,7 @@ async fn main() {
     plugin::on_group_msg(move |event| {
         let db = Arc::clone(&db_clone);
         async move {
-            let group_id = event.group_id.unwrap();
+            let group_id = event.group_id;
 
             let config = CONFIG.get().unwrap();
             if !config.notify_group.contains(&group_id) {
@@ -156,7 +143,7 @@ async fn add_msg(db: &sqlx::SqlitePool, group_id: i64, message: &str) {
 }
 
 async fn make_word_cloud(
-    path: Arc<PathBuf>,
+    path: &PathBuf,
     notify_group: i64,
     db: &sqlx::SqlitePool,
 ) -> Result<Vec<u8>> {
@@ -199,6 +186,29 @@ async fn make_word_cloud(
     let output = child.wait_with_output().await?;
 
     Ok(output.stdout)
+}
+
+async fn send_word_cloud(bot: &RuntimeBot, group_id: i64, path: &PathBuf, db: &sqlx::SqlitePool) {
+    let image = match make_word_cloud(path, group_id, db).await {
+        Ok(image) => image,
+        Err(e) => {
+            log::error!("make word cloud failed: {}, group_id: {}", e, group_id);
+            bot.send_private_msg(
+                bot.get_main_admin().unwrap(),
+                format!("make word cloud failed: {}, group_id: {}", e, group_id),
+            );
+            return;
+        }
+    };
+
+    info!("send word cloud to group: {}", group_id);
+
+    let image = STANDARD.encode(&image);
+    let image = format!("base64://{}", image);
+    bot.send_group_msg(
+        group_id,
+        Message::new().add_text("今日词云").add_image(&image),
+    );
 }
 
 async fn select_from_range(

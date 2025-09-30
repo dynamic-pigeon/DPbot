@@ -5,10 +5,10 @@ edition = "2024"
 
 [dependencies]
 kovi.workspace = true
+serde.workspace = true
+anyhow.workspace = true
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
-serde = { version = "1.0", features = ["derive"] }
 base64 = "0.22"
-jieba-rs = "0.7"
-anyhow = "1.0"
+jieba-rs = "0.8"
 moka = { version = "0.12.10", features = ["future"] }
 reqwest = { version = "0.12", features = ["json"] }

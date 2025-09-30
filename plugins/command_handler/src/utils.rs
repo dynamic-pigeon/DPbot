@@ -1,9 +1,6 @@
-use std::sync::LazyLock;
-
 use kovi::{
     Message,
     chrono::{self, Utc},
-    tokio,
 };
 
 use anyhow::{Error, Result};
@@ -32,15 +29,6 @@ pub fn user_id_or_text(text: &str) -> Result<IdOrText<'_>> {
         Ok(IdOrText::At(user_id.parse()?))
     } else {
         Ok(IdOrText::Text(text))
-    }
-}
-
-#[allow(dead_code)]
-pub fn user_id_or_text_str(text: &str) -> &str {
-    if let Some(user_id) = text.strip_prefix("@") {
-        user_id
-    } else {
-        text
     }
 }
 
@@ -105,19 +93,10 @@ pub fn change(args: &mut [String], commands: &Value) -> Result<(String, bool)> {
 }
 
 pub(crate) async fn fetch(url: &str) -> Result<reqwest::Response> {
-    wait(async move { reqwest::get(url).await.map_err(Into::into) }).await
+    fetch_cf_api(async move { reqwest::get(url).await.map_err(Into::into) }).await
 }
 
-/// 用于对 api 的访问，防止访问过快被 api ban 了
-///
-/// ## 参数
-/// - `f`: Future
-pub(crate) async fn wait<F: Future>(future: F) -> F::Output {
-    static LOCK: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
-    let lock = LOCK.lock().await;
-    kovi::spawn(async move {
-        let _lock = lock;
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    });
-    future.await
+pub(crate) async fn fetch_cf_api<F: Future>(future: F) -> F::Output {
+    utils::api_limit::limit_api_call("codeforces", std::time::Duration::from_secs(2), 1, future)
+        .await
 }

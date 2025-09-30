@@ -1,75 +1,116 @@
-import matplotlib.pyplot as plt
+import sys
+from typing import List, Dict, Any
 import requests
 from io import BytesIO
-import sys
+import matplotlib.pyplot as plt
+
+# Configuration for rating ranges and colors
+# Each tuple is (start_rating, number_of_100_point_bins, color)
+RATING_CONFIG = [
+    (800, 4, "gray"),
+    (1200, 2, "g"),
+    (1400, 2, "c"),
+    (1600, 3, "b"),
+    (1900, 2, "purple"),
+    (2100, 3, "orange"),
+    (2400, 12, "red"),
+]
+MIN_RATING = 800
+MAX_RATING = 3500
+NUM_BINS = (MAX_RATING - MIN_RATING) // 100 + 1
 
 
-def fetch_json(url):
+def fetch_user_status(cf_id: str) -> List[Dict[str, Any]]:
+    """Fetches user submission status from the Codeforces API."""
+    url = f"https://codeforces.com/api/user.status?handle={cf_id}"
     try:
         response = requests.get(url)
-    except:
-        print("无法连接到 Codeforces 服务器", file=sys.stderr)
-        exit(-1)
-    return response.json()
+        response.raise_for_status()  # Raise an exception for bad status codes
+        data = response.json()
+        if data.get("status") != "OK":
+            print(f"API Error: {data.get('comment', 'Unknown error')}", file=sys.stderr)
+            sys.exit(1)
+        return data.get("result", [])
+    except requests.exceptions.RequestException as e:
+        print(f"无法连接到 Codeforces 服务器: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
-def analyze(CF_id):
-    json = fetch_json("https://codeforces.com/api/user.status?handle={}".format(CF_id))
-    if json["status"] != "OK":
-        print(json["comment"], file=sys.stderr)
-        exit(-1)
-    status = json["result"]
-    if len(status) == 0:
+def process_submissions(
+    submissions: List[Dict[str, Any]],
+) -> tuple[Dict[int, int], int]:
+    """Processes submissions to count unique AC problems per rating."""
+    if not submissions:
         print("没有提交记录", file=sys.stderr)
-        exit(-1)
-    AC_status = []
-    vis = set()
-    for x in status:
+        sys.exit(1)
+
+    ac_problems = {}
+    frequencies = {rating: 0 for rating in range(MIN_RATING, MAX_RATING + 100, 100)}
+
+    for sub in submissions:
+        problem = sub.get("problem", {})
+        problem_id = f"{problem.get('contestId')}{problem.get('index')}"
+
         if (
-            "problem" not in x.keys()
-            or "problemsetName" in x["problem"]
-            or "verdict" not in x.keys()
+            sub.get("verdict") == "OK"
+            and "rating" in problem
+            and problem_id not in ac_problems
         ):
-            continue
-        if (
-            x["verdict"] == "OK"
-            and (str(x["problem"]["contestId"]) + x["problem"]["index"]) not in vis
-        ):
-            AC_status.append(x["problem"])
-            vis.add(str(x["problem"]["contestId"]) + x["problem"]["index"])
-    plt.clf()
-    color = (
-        ["gray"] * 4
-        + ["g"] * 2
-        + ["c"] * 2
-        + ["b"] * 3
-        + ["purple"] * 2
-        + ["orange"] * 3
-        + ["red"] * 12
-    )
-    y = [0] * 28
-    for t in AC_status:
-        if "rating" in t:
-            y[t["rating"] // 100 - 8] += 1
-    x = [i for i in range(800, 3600, 100)]
+            rating = problem["rating"]
+            if MIN_RATING <= rating <= MAX_RATING:
+                # Group ratings into 100-point bins
+                bin_rating = (rating // 100) * 100
+                frequencies[bin_rating] += 1
+                ac_problems[problem_id] = True
+
+    return frequencies, len(ac_problems)
+
+
+def plot_analysis(cf_id: str, frequencies: Dict[int, int], total_ac: int) -> bytes:
+    """Generates a bar chart of solved problems by rating."""
+    fig, ax = plt.subplots(dpi=300, figsize=(10, 5))
+
+    ratings = sorted(frequencies.keys())
+    counts = [frequencies[r] for r in ratings]
+
+    colors = []
+    for _, count, color in RATING_CONFIG:
+        colors.extend([color] * count)
+
     bar_width = 96
-    plt.figure(dpi=300, figsize=(10, 5))
-    plt.xlim(750, 3550)
-    for i in range(len(y)):
-        plt.bar(
-            x[i], y[i], bar_width, color=color[i], edgecolor=color[i], antialiased=True
-        )
-    # plt.show()
-    plt.title("{} solved {} problems in total".format(CF_id, len(AC_status)))
-    plt.xlabel("Rating")
-    plt.ylabel("Frequency")
+    ax.bar(
+        ratings,
+        counts,
+        width=bar_width,
+        color=colors,
+        edgecolor=colors,
+        antialiased=True,
+    )
+
+    ax.set_title(f"{cf_id} solved {total_ac} problems in total")
+    ax.set_xlabel("Rating")
+    ax.set_ylabel("Frequency")
+    ax.set_xlim(MIN_RATING - 50, MAX_RATING + 50)
+
+    fig.tight_layout()
 
     with BytesIO() as buffer:
-        plt.savefig(buffer, format="png")
-        buffer.seek(0)  # 在读取之前移动到缓冲区的开头
-        sys.stdout.buffer.write(buffer.read())
+        fig.savefig(buffer, format="png")
+        return buffer.getvalue()
+
+
+def main():
+    """Main function to run the analysis."""
+    if len(sys.argv) < 2:
+        print("Usage: python analyze.py <Codeforces_ID>", file=sys.stderr)
+        sys.exit(1)
+
+    cf_id = sys.argv[1]
+    submissions = fetch_user_status(cf_id)
+    frequencies, total_ac = process_submissions(submissions)
+    image_bytes = plot_analysis(cf_id, frequencies, total_ac)
+    sys.stdout.buffer.write(image_bytes)
 
 
 if __name__ == "__main__":
-    CF_id = sys.argv[1]
-    analyze(CF_id)
+    main()

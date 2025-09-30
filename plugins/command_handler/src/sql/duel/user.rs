@@ -48,13 +48,14 @@ pub async fn get_top_20_ranklist() -> Result<Vec<User>> {
 }
 
 pub trait CommitUserExt {
-    async fn update_user(&mut self, user: &User) -> Result<&mut Self>;
+    async fn update_user_cf_id(&mut self, user: &User) -> Result<&mut Self>;
+    async fn update_user_daily(&mut self, user: &User) -> Result<&mut Self>;
     async fn update_user_rating(&mut self, user: &User) -> Result<&mut Self>;
     async fn add_user(&mut self, qq: i64) -> Result<&mut Self>;
 }
 
 impl CommitUserExt for Commit {
-    async fn update_user(&mut self, user: &User) -> Result<&mut Self> {
+    async fn update_user_cf_id(&mut self, user: &User) -> Result<&mut Self> {
         let trans = self
             .tx
             .as_mut()
@@ -62,11 +63,28 @@ impl CommitUserExt for Commit {
 
         let _ = sqlx::query(
             r#"
-            UPDATE user SET rating = ?, cf_id = ?, daily_score = ?, last_daily = ? WHERE qq = ?
+            UPDATE user SET cf_id = ? WHERE qq = ?
             "#,
         )
-        .bind(user.rating)
         .bind(&user.cf_id)
+        .bind(user.qq)
+        .execute(&mut **trans)
+        .await?;
+
+        Ok(self)
+    }
+
+    async fn update_user_daily(&mut self, user: &User) -> Result<&mut Self> {
+        let trans = self
+            .tx
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
+
+        let _ = sqlx::query(
+            r#"
+            UPDATE user SET daily_score = ?, last_daily = ? WHERE qq = ?
+            "#,
+        )
         .bind(user.daily_score)
         .bind(&user.last_daily)
         .bind(user.qq)

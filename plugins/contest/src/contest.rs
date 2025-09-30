@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use kovi::{
     chrono::{self, Datelike, FixedOffset},
-    log::{error, info},
+    log::{debug, error, info},
     tokio::sync::RwLock,
 };
 use serde::Deserialize;
@@ -74,6 +74,16 @@ pub async fn init() -> Result<usize> {
         Err(e) => {
             send_to_super_admin(&format!("Contest 初始化失败: {}", e));
             error!("Contest 初始化失败: {}，继续使用之前的数据初始化", e);
+            kovi::spawn(async {
+                debug!("Retrying to update contests after 1 hour...");
+                kovi::tokio::time::sleep(kovi::tokio::time::Duration::from_secs(60 * 60)).await;
+                if let Err(e) = update_contests().await {
+                    send_to_super_admin(&format!("Contest 重试更新失败: {}", e));
+                    error!("Contest 重试更新失败: {}", e);
+                } else {
+                    info!("Contest 重试更新成功");
+                }
+            });
         }
     }
 

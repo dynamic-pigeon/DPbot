@@ -1,12 +1,15 @@
 use std::sync::{Arc, OnceLock};
 
 use duel::handlers;
-use kovi::serde_json::{self, Value};
+use duel::user::BindingUsers;
+use kovi::serde_json::Value;
 use kovi::utils::load_json_data;
 use kovi::{MsgEvent, PluginBuilder as plugin, tokio};
 use utils::{change, mes_to_text};
 
+pub(crate) mod atcoder;
 pub(crate) mod codeforces;
+pub(crate) mod config;
 pub(crate) mod duel;
 pub(crate) mod error;
 pub(crate) mod sql;
@@ -14,6 +17,7 @@ pub(crate) mod utils;
 
 static PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
 static CONFIG: OnceLock<utils::Config> = OnceLock::new();
+static BINDING_USERS: OnceLock<BindingUsers> = OnceLock::new();
 
 #[kovi::plugin]
 async fn main() {
@@ -26,23 +30,14 @@ async fn main() {
     sql::init(sql_path.to_str().unwrap()).await.unwrap();
 
     duel::init().await;
+    BINDING_USERS.get_or_init(BindingUsers::new);
 
     let config_path = data_path.join("config.json");
     let config = load_json_data(Default::default(), config_path).unwrap();
     CONFIG.get_or_init(|| config);
 
-    let command_path = data_path.join("command.json");
-
-    let command: Value =
-        serde_json::from_reader(std::fs::File::open(&command_path).unwrap()).unwrap();
-
-    let command = Arc::new(command);
-
-    plugin::on_msg(move |e| {
-        let command = command.clone();
-        async move {
-            handle(e, &command).await;
-        }
+    plugin::on_msg(|e| async move {
+        handle(e, &config::COMMAND).await;
     });
 }
 
@@ -74,20 +69,20 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
     }
 
     match cmd.as_str() {
-        "analyze" => {
+        "cf_analyze" => {
             codeforces::analyze(&event, &args).await;
         }
-        "rating" => {
+        "cf_rating" => {
             codeforces::rating(&event, &args).await;
         }
         "daily_problem" => {
             handlers::daily_problem(&event).await;
         }
         "bind" => {
-            handlers::bind(&event, &args).await;
+            handlers::bind(&event, &args, BINDING_USERS.get().unwrap()).await;
         }
         "finish_bind" => {
-            handlers::finish_bind(&event).await;
+            handlers::finish_bind(&event, BINDING_USERS.get().unwrap()).await;
         }
         "problem" => {
             handlers::problem(&event, &args).await;
@@ -124,6 +119,9 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
         }
         "ongoing" => {
             handlers::ongoing(&event).await;
+        }
+        "at_rating" => {
+            atcoder::rating(&event, &args).await;
         }
         _ => {
             event.reply("还没写好");

@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 kovi.workspace = true
-anyhow = "1.0"
+anyhow.workspace = true
+serde.workspace = true
 reqwest = { version = "0.12", features = ["json"] }
-serde = { version = "1.0", features = ["derive"] }
 pulldown-cmark = "0.13.0"
 base64 = "0.22"

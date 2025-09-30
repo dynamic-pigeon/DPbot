@@ -10,6 +10,7 @@ use html::END;
 use kovi::{
     Message, PluginBuilder as plugin,
     bot::message::Segment,
+    event::GroupMsgEvent,
     log::{debug, error, info},
     serde_json::json,
     tokio::{
@@ -47,82 +48,8 @@ async fn main() {
         let data_path = data_path.clone();
         let messages = messages.clone();
         async move {
-            let text = event.borrow_text().unwrap_or_default().trim();
-
-            let Some(text) = text.strip_prefix("/chat") else {
-                return;
-            };
-
-            let group = event.group_id.unwrap();
-
-            let msgs = if let Some(v) = messages.read().await.get(&group) {
-                v.clone()
-            } else {
-                messages
-                    .write()
-                    .await
-                    .entry(group)
-                    .or_insert(Arc::new(Mutex::new(req::ChatBody::new(
-                        config.model.clone(),
-                        config.system_prompt.clone(),
-                    ))))
-                    .clone()
-            };
-
-            let mut msgs = match msgs.try_lock() {
-                Ok(v) => v,
-                Err(_) => {
-                    event.reply("请等待上次回答结束");
-                    return;
-                }
-            };
-
-            info!("chat: {}", text);
-
-            let md = match chat.chat(text.to_string(), &mut msgs).await {
-                Ok(v) => v
-                    .replace("\\[", "$$")
-                    .replace("\\]", "$$")
-                    .replace("\\(", "$")
-                    .replace("\\)", "$"),
-                Err(e) => {
-                    error!("{}", e);
-                    event.reply("未知错误");
-                    return;
-                }
-            };
-
-            debug!("receive form chat success");
-
-            let img = match gen_img(&md, &data_path).await {
-                Ok(v) => v,
-                Err(e) => {
-                    error!("{}", e);
-                    event.reply("生成图片失败");
-                    // send text only
-                    let text_seg = Segment::new("text", json!({ "text": md }));
-                    let seg = Segment::new("node", json!({ "content": [text_seg] }));
-                    let msg = Message::from(vec![seg]);
-                    event.reply(msg);
-                    return;
-                }
-            };
-
-            debug!("gen img success");
-
-            let base64_img = STANDARD.encode(img);
-
-            let text_seg = Segment::new("text", json!({ "text": md }));
-            let img_seg = Segment::new(
-                "image",
-                json!({ "file": &format!("base64://{}", base64_img) }),
-            );
-
-            let seg = Segment::new("node", json!({ "content": [img_seg, text_seg] }));
-
-            let msg = Message::from(vec![seg]);
-
-            event.reply(msg);
+            // 处理聊天命令
+            process_chat_command(event, chat, config, data_path, messages).await;
         }
     });
 }
@@ -178,4 +105,88 @@ async fn md_to_html(md: &str) -> String {
     html_output.push_str(END);
 
     html_output
+}
+
+async fn process_chat_command(
+    event: Arc<GroupMsgEvent>,
+    chat: Arc<req::Chat>,
+    config: Arc<config::Config>,
+    data_path: Arc<PathBuf>,
+    messages: Arc<RwLock<HashMap<i64, Arc<Mutex<req::ChatBody>>>>>,
+) {
+    let text = event.borrow_text().unwrap_or_default().trim();
+
+    let Some(text) = text.strip_prefix("/chat") else {
+        return;
+    };
+
+    let group = event.group_id;
+    let msgs = if let Some(v) = messages.read().await.get(&group) {
+        v.clone()
+    } else {
+        messages
+            .write()
+            .await
+            .entry(group)
+            .or_insert(Arc::new(Mutex::new(req::ChatBody::new(
+                config.model.clone(),
+                config.system_prompt.clone(),
+            ))))
+            .clone()
+    };
+
+    let mut msgs = match msgs.try_lock() {
+        Ok(v) => v,
+        Err(_) => {
+            event.reply("请等待上次回答结束");
+            return;
+        }
+    };
+
+    info!("chat: {}", text);
+
+    let md = match chat.chat(text.to_string(), &mut msgs).await {
+        Ok(v) => v
+            .replace("\\[", "$$")
+            .replace("\\]", "$$")
+            .replace("\\(", "$")
+            .replace("\\)", "$"),
+        Err(e) => {
+            error!("{}", e);
+            event.reply("未知错误");
+            return;
+        }
+    };
+
+    debug!("receive form chat success");
+
+    let img = match gen_img(&md, &data_path).await {
+        Ok(v) => v,
+        Err(e) => {
+            error!("{}", e);
+            event.reply("生成图片失败");
+            // send text only
+            let text_seg = Segment::new("text", json!({ "text": md }));
+            let seg = Segment::new("node", json!({ "content": [text_seg] }));
+            let msg = Message::from(vec![seg]);
+            event.reply(msg);
+            return;
+        }
+    };
+
+    debug!("gen img success");
+
+    let base64_img = STANDARD.encode(img);
+
+    let text_seg = Segment::new("text", json!({ "text": md }));
+    let img_seg = Segment::new(
+        "image",
+        json!({ "file": &format!("base64://{}", base64_img) }),
+    );
+
+    let seg = Segment::new("node", json!({ "content": [img_seg, text_seg] }));
+
+    let msg = Message::from(vec![seg]);
+
+    event.reply(msg);
 }

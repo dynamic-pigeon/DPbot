@@ -2,7 +2,7 @@
 // 但是参加 duel 的都是我们代码部队的国际伟大大师或者传奇伟大大师，所以将 K 设为 128
 pub const ELO_K: f64 = 128.0;
 // 最大每日一题难度
-pub const MAX_DAILY_RATING: i64 = 2500;
+pub const MAX_DAILY_RATING: i64 = 1200;
 
 pub const TAGS: &[&str] = &[
     "binary search",

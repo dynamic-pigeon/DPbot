@@ -15,5 +15,8 @@
         "/cf rating [@p, cf_id]: 查询用户的 CF rating",
         "/cf analyze [@p, cf_id]: 查询用户的 CF 做题情况"
     ],
-    "chat": "/chat [content], 和 ai 聊天"
+    "chat": "/chat [content], 和 ai 聊天",
+    "at": [
+        "/at rating at_id: 查询用户的 AtCoder rating"
+    ]
 }

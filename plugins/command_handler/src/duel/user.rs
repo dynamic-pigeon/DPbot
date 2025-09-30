@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     duel::problem::get_last_submission,
@@ -9,21 +9,28 @@ use anyhow::Result;
 use kovi::{chrono, log::info, tokio::sync::RwLock};
 use sqlx::{FromRow, Row, sqlite::SqliteRow};
 
-static USER: LazyLock<RwLock<HashMap<i64, User>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
+#[derive(Clone, Default)]
+pub struct BindingUsers(Arc<RwLock<HashMap<i64, User>>>);
 
-pub async fn add_to(user: User) {
-    let mut user_map = USER.write().await;
-    user_map.insert(user.qq, user);
-}
+impl BindingUsers {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-pub async fn user_inside(qq: i64) -> bool {
-    let map = USER.read().await;
-    map.contains_key(&qq)
-}
+    pub async fn insert(&self, user: User) {
+        let mut user_map = self.0.write().await;
+        user_map.insert(user.qq, user);
+    }
 
-pub async fn get_user(qq: i64) -> Option<User> {
-    let mut map = USER.write().await;
-    map.remove(&qq)
+    pub async fn contains(&self, qq: i64) -> bool {
+        let map = self.0.read().await;
+        map.contains_key(&qq)
+    }
+
+    pub async fn take(&self, qq: i64) -> Option<User> {
+        let mut map = self.0.write().await;
+        map.remove(&qq)
+    }
 }
 
 /// 用户信息
@@ -102,7 +109,7 @@ impl User {
 
         sql::utils::Commit::start()
             .await?
-            .update_user(self)
+            .update_user_cf_id(self)
             .await?
             .commit()
             .await?;
@@ -113,50 +120,56 @@ impl User {
 
 impl Bind {
     fn new(cf_id: String) -> Self {
-        let start_time = today_utc();
-        Self { cf_id, start_time }
+        Self {
+            cf_id,
+            start_time: today_utc(),
+        }
     }
 
     async fn finish(&self) -> Result<()> {
-        let Ok(submission) = get_last_submission(&self.cf_id).await else {
-            return Err(anyhow::anyhow!("获取提交记录失败"));
-        };
+        let submission = get_last_submission(&self.cf_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("获取提交记录失败: {}", e))?;
 
         info!("Submission: {:#?}", submission);
 
-        let Some(problem) = submission.get("problem").and_then(|v| v.as_object()) else {
-            return Err(anyhow::anyhow!("未知错误"));
-        };
+        let problem = submission
+            .get("problem")
+            .ok_or_else(|| anyhow::anyhow!("提交记录中缺少 'problem' 字段"))?;
 
-        let Some(contest_id) = problem.get("contestId").and_then(|v| v.as_i64()) else {
-            return Err(anyhow::anyhow!("未知错误"));
-        };
+        let contest_id = problem
+            .get("contestId")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| anyhow::anyhow!("解析 contestId 失败"))?;
 
-        let Some(index) = problem.get("index").and_then(|v| v.as_str()) else {
-            return Err(anyhow::anyhow!("未知错误"));
-        };
+        let index = problem
+            .get("index")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("解析 index 失败"))?;
 
-        let Some(verdict) = submission.get("verdict").and_then(|v| v.as_str()) else {
-            return Err(anyhow::anyhow!("未知错误"));
-        };
+        let verdict = submission
+            .get("verdict")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("解析 verdict 失败"))?;
 
         if contest_id != 1 || index != "A" {
-            return Err(anyhow::anyhow!("没有交到指定题目"));
+            return Err(anyhow::anyhow!("请提交到指定题目 (Contest 1, Problem A)"));
         }
 
         if verdict != "COMPILATION_ERROR" {
-            return Err(anyhow::anyhow!("没有交 CE"));
+            return Err(anyhow::anyhow!("需要提交一个导致编译错误(CE)的代码"));
         }
 
-        let end_time = chrono::DateTime::from_timestamp(
-            submission["creationTimeSeconds"].as_i64().unwrap(),
-            0,
-        )
-        .unwrap();
+        let creation_time_seconds = submission
+            .get("creationTimeSeconds")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| anyhow::anyhow!("解析提交时间失败"))?;
 
-        let duration = end_time - self.start_time;
-        if end_time < self.start_time || duration.num_seconds() > 120 {
-            return Err(anyhow::anyhow!("未在规定时间内提交"));
+        let end_time = chrono::DateTime::from_timestamp(creation_time_seconds, 0)
+            .ok_or_else(|| anyhow::anyhow!("无效的时间戳"))?;
+
+        if end_time < self.start_time || (end_time - self.start_time).num_seconds() > 120 {
+            return Err(anyhow::anyhow!("未在规定时间(2分钟)内完成绑定操作"));
         }
 
         Ok(())
