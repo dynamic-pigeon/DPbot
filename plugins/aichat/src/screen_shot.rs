@@ -1,6 +1,6 @@
 use anyhow::Result;
-use kovi::tokio;
-use std::path::Path;
+use kovi::tokio::{self, io::AsyncWriteExt};
+use std::process::Stdio;
 
 pub struct ScreenshotManager {}
 
@@ -9,14 +9,22 @@ impl ScreenshotManager {
         Ok(Self {})
     }
 
-    pub async fn screenshot<P: AsRef<Path>>(&mut self, full_file_path: P) -> Result<Vec<u8>> {
-        let file_path = full_file_path.as_ref();
-
-        let output = tokio::process::Command::new("wkhtmltoimage")
-            .arg(file_path)
+    pub async fn screenshot<T: AsRef<[u8]>>(&mut self, html: T) -> Result<Vec<u8>> {
+        let mut output = tokio::process::Command::new("wkhtmltoimage")
             .arg("-")
-            .output()
-            .await?;
+            .arg("-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        let mut stdin = output.stdin.take().unwrap();
+
+        stdin.write_all(html.as_ref()).await?;
+
+        drop(stdin);
+
+        let output = output.wait_with_output().await?;
 
         if !output.status.success() {
             return Err(anyhow::anyhow!(

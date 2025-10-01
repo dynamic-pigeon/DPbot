@@ -6,19 +6,6 @@ use kovi::{
 use anyhow::{Error, Result};
 use kovi::serde_json::Value;
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub(crate) struct Config {
-    pub py_analyzer_path: String,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            py_analyzer_path: "".to_string(),
-        }
-    }
-}
-
 pub enum IdOrText<'a> {
     Text(&'a str),
     At(i64),
@@ -99,4 +86,39 @@ pub(crate) async fn fetch(url: &str) -> Result<reqwest::Response> {
 pub(crate) async fn fetch_cf_api<F: Future>(future: F) -> F::Output {
     utils::api_limit::limit_api_call("codeforces", std::time::Duration::from_secs(2), 1, future)
         .await
+}
+
+pub async fn get_user_rating(cf_id: &str) -> Result<i64> {
+    let res = fetch(&format!(
+        "https://codeforces.com/api/user.info?handles={}",
+        cf_id
+    ))
+    .await
+    .map_err(|_| anyhow::anyhow!("Failed to fetch user info"))?;
+
+    let body: Value = res
+        .json()
+        .await
+        .map_err(|_| anyhow::anyhow!("Failed to parse response"))?;
+
+    let status = body["status"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid response"))?;
+    if status != "OK" {
+        return Err(anyhow::anyhow!("API returned error"));
+    }
+
+    let users = body["result"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("No user found"))?;
+    if users.is_empty() {
+        return Err(anyhow::anyhow!("User not found"));
+    }
+
+    let user = &users[0];
+    let rating = user["rating"]
+        .as_i64()
+        .ok_or_else(|| anyhow::anyhow!("User has no rating"))?;
+
+    Ok(rating)
 }

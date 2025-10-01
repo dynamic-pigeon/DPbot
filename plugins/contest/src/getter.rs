@@ -3,8 +3,9 @@ use std::sync::Arc;
 use anyhow::{Ok, Result};
 use kovi::serde_json::{self, Value};
 use reqwest::Response;
+use utils::retry::retry;
 
-use crate::{CONFIG, contest::Contest, retry::retry};
+use crate::{CONFIG, contest::Contest};
 
 async fn fetch(url: &str) -> Result<Response> {
     utils::api_limit::limit_api_call("clist", std::time::Duration::from_secs(1), 1, async move {

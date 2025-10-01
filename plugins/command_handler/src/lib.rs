@@ -16,7 +16,7 @@ pub(crate) mod sql;
 pub(crate) mod utils;
 
 static PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
-static CONFIG: OnceLock<utils::Config> = OnceLock::new();
+static CONFIG: OnceLock<config::Config> = OnceLock::new();
 static BINDING_USERS: OnceLock<BindingUsers> = OnceLock::new();
 
 #[kovi::plugin]
@@ -69,11 +69,14 @@ async fn handle(event: Arc<MsgEvent>, command: &Value) {
     }
 
     match cmd.as_str() {
+        "cf_rating" => {
+            codeforces::rating(&event, &args).await;
+        }
         "cf_analyze" => {
             codeforces::analyze(&event, &args).await;
         }
-        "cf_rating" => {
-            codeforces::rating(&event, &args).await;
+        "cf_recommend" => {
+            codeforces::recommend::recommend(&event, &args).await;
         }
         "daily_problem" => {
             handlers::daily_problem(&event).await;

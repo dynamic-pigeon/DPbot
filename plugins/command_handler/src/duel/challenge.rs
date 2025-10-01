@@ -8,15 +8,14 @@ use rand::seq::IndexedRandom;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Decode, Encode, FromRow, Row, Sqlite, Type};
 
-use crate::duel::problem::get_problems_by;
+use crate::duel::problem::{Problem, get_problems_by};
+use crate::duel::submission::{Submission, get_last_submission};
 use crate::error::SubmissionError;
 use crate::sql;
 use crate::sql::duel::challenge::CommitChallengeExt;
 use crate::sql::duel::user::CommitUserExt;
 use crate::sql::utils::Commit;
 use crate::utils::today_utc;
-
-use super::problem::{Problem, get_last_submission};
 
 #[derive(Clone)]
 pub struct Challenge {
@@ -293,10 +292,7 @@ impl Challenge {
 
     /// @param submission 提交记录
     /// @return (是否通过, -提交时间)
-    fn calc_score(
-        &self,
-        submission: Result<kovi::serde_json::Value, SubmissionError>,
-    ) -> Result<(bool, i64)> {
+    fn calc_score(&self, submission: Result<Submission, SubmissionError>) -> Result<(bool, i64)> {
         let submission = match submission {
             Ok(submission) => submission,
             Err(SubmissionError::NoSubmission) => return Ok((false, 0)),
@@ -304,28 +300,18 @@ impl Challenge {
         };
 
         debug!("Submission: {:#?}", submission);
-        let mut submission = match submission {
-            serde_json::Value::Object(map) => map,
-            _ => Err(anyhow::anyhow!("获取提交记录失败"))?,
-        };
-        let problem: Problem = submission
-            .remove("problem")
-            .and_then(|p| serde_json::from_value(p).ok())
-            .ok_or(anyhow::anyhow!("获取题目信息失败"))?;
+
+        let problem: Problem = submission.problem;
 
         if !problem.same_problem(self.problem.as_ref().unwrap()) {
             return Ok((false, 0));
         }
 
         let pass = submission
-            .get("verdict")
-            .and_then(|v| v.as_str())
+            .verdict
             .ok_or(anyhow::anyhow!("获取提交结果失败"))?
             == "OK";
-        let time = submission
-            .get("creationTimeSeconds")
-            .and_then(|v| v.as_i64())
-            .ok_or(anyhow::anyhow!("获取提交时间失败"))?;
+        let time = submission.creation_time_seconds;
 
         Ok((pass, -time))
     }

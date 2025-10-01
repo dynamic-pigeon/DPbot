@@ -2,13 +2,12 @@ use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
 
 use anyhow::{Error, Result};
-use kovi::log::info;
 use kovi::serde_json::{self, Value};
 use kovi::tokio::sync::{Mutex, RwLock};
 use rand::seq::{IndexedRandom, IteratorRandom};
 
 use crate::duel::config::MAX_DAILY_RATING;
-use crate::error::SubmissionError;
+use crate::duel::submission::get_recent_submissions;
 use crate::sql::duel::problem::CommitProblemExt;
 use crate::sql::utils::Commit;
 
@@ -44,6 +43,14 @@ impl Problem {
     pub fn same_problem(&self, other: &Self) -> bool {
         self.contest_id == other.contest_id && self.index == other.index
     }
+}
+
+/// 格式化题目链接
+pub fn format_problem_link(contest_id: i64, index: &str) -> String {
+    format!(
+        "题目链接：https://codeforces.com/problemset/problem/{}/{}",
+        contest_id, index
+    )
 }
 
 pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<ProblemSet> {
@@ -175,14 +182,12 @@ async fn filter_help<'a>(
         let submissions = get_recent_submissions(&cf_id).await.unwrap_or_default();
         submissions
             .into_iter()
-            .filter(|submission| {
-                submission.get("verdict") == Some(&Value::String("OK".to_string()))
-            })
-            .filter_map(|submission| {
-                let problem = submission.get("problem")?.as_object()?;
-                let contest_id = problem.get("contestId")?.as_i64()?;
-                let index = problem.get("index")?.as_str()?.to_string();
-                Some((contest_id, index))
+            .filter(|submission| submission.is_accepted())
+            .map(|submission| {
+                let problem = submission.problem;
+                let contest_id = problem.contest_id;
+                let index = problem.index;
+                (contest_id, index)
             })
             .collect::<HashSet<_>>()
     } else {
@@ -211,67 +216,6 @@ fn check_tags(tags: &[&str]) -> Result<()> {
         }
     }
     Ok(())
-}
-
-pub async fn get_recent_submissions(cf_id: &str) -> Result<Vec<Value>, SubmissionError> {
-    let res = fetch(&format!(
-        "https://codeforces.com/api/user.status?handle={}",
-        cf_id
-    ))
-    .await
-    .map_err(|_| SubmissionError::FetchError)?;
-
-    info!("Got response: {:?}", res);
-
-    let body = res
-        .json::<Value>()
-        .await
-        .map_err(|_| SubmissionError::FetchError)?;
-
-    let status = body["status"].as_str().ok_or(SubmissionError::FetchError)?;
-    if status != "OK" {
-        return Err(SubmissionError::FetchError);
-    }
-
-    match body {
-        Value::Object(mut map) => match map.remove("result") {
-            Some(Value::Array(submissions)) => Ok(submissions),
-            _ => Err(SubmissionError::NoSubmission),
-        },
-        _ => unreachable!("Invalid response"),
-    }
-}
-
-/// 得到用户最近一次提交的信息
-pub async fn get_last_submission(cf_id: &str) -> Result<Value, SubmissionError> {
-    let res = fetch(&format!(
-        "https://codeforces.com/api/user.status?handle={}&count=1",
-        cf_id
-    ))
-    .await
-    .map_err(|_| SubmissionError::FetchError)?;
-
-    let body = res
-        .json::<Value>()
-        .await
-        .map_err(|_| SubmissionError::FetchError)?;
-
-    let status = body["status"].as_str().ok_or(SubmissionError::FetchError)?;
-    if status != "OK" {
-        return Err(SubmissionError::FetchError);
-    }
-
-    match body {
-        Value::Object(mut map) => match map.remove("result") {
-            Some(Value::Array(mut submissions)) => {
-                // 获取最近一次提交
-                assert!(submissions.len() <= 1);
-                submissions.pop().ok_or(SubmissionError::NoSubmission)
-            }
-            _ => Err(SubmissionError::NoSubmission),
-        },
-        _ => unreachable!("Invalid response"),
-    }
 }
 
 async fn fetch_problems() -> Result<ProblemSet, Error> {

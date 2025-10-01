@@ -2,12 +2,12 @@ use kovi::{
     MsgEvent,
     bot::message::Segment,
     log::{debug, error},
-    serde_json::{self, json},
+    serde_json::json,
 };
 use rand::seq::IndexedRandom;
 
 use crate::{
-    duel::problem::Problem,
+    duel::problem::format_problem_link,
     sql::{
         self,
         duel::{challenge::CommitChallengeExt, user::CommitUserExt},
@@ -25,14 +25,6 @@ use super::{
 fn handle_error(event: &MsgEvent, e: anyhow::Error) {
     error!("Error: {}", e);
     event.reply(e.to_string());
-}
-
-/// 格式化题目链接
-fn format_problem_link(contest_id: i64, index: &str) -> String {
-    format!(
-        "题目链接：https://codeforces.com/problemset/problem/{}/{}",
-        contest_id, index
-    )
 }
 
 //
@@ -215,7 +207,7 @@ pub async fn daily_finish(event: &MsgEvent) {
 
     // 获取最新提交
     let cf_id = user.cf_id.as_ref().unwrap();
-    let submission = match super::problem::get_last_submission(cf_id).await {
+    let submission = match super::submission::get_last_submission(cf_id).await {
         Ok(submission) => submission,
         Err(e) => {
             event.reply("获取提交记录失败");
@@ -227,28 +219,10 @@ pub async fn daily_finish(event: &MsgEvent) {
     debug!("Submission: {:#?}", submission);
 
     // 解析提交和题目信息
-    let (submission, problem) = match (move || {
-        if let serde_json::Value::Object(mut map) = submission {
-            let problem: Problem = serde_json::from_value(
-                map.remove("problem")
-                    .ok_or_else(|| anyhow::anyhow!("没有找到提交的题目"))?,
-            )?;
-            anyhow::Ok((map, problem))
-        } else {
-            Err(anyhow::anyhow!("获取提交记录失败"))?
-        }
-    })() {
-        Ok(res) => res,
-        Err(e) => {
-            handle_error(event, e);
-            return;
-        }
-    };
+    let problem = &submission.problem;
 
     // 检查是否完成了正确的题目
-    if !problem.same_problem(&daily_problem)
-        || submission.get("verdict").and_then(|v| v.as_str()) != Some("OK")
-    {
+    if !problem.same_problem(&daily_problem) || submission.is_accepted() {
         event.reply("未发现通过记录");
         return;
     }

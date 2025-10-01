@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::Path,
     process::Stdio,
     sync::{Arc, OnceLock},
 };
@@ -77,8 +77,7 @@ async fn main() {
         async move {
             let group_id = event.group_id;
 
-            let config = CONFIG.get().unwrap();
-            if !config.notify_group.contains(&group_id) {
+            if !CONFIG.get().unwrap().notify_group.contains(&group_id) {
                 return;
             }
             let msg = get_text(&event.message).await;
@@ -142,11 +141,7 @@ async fn add_msg(db: &sqlx::SqlitePool, group_id: i64, message: &str) {
     .unwrap();
 }
 
-async fn make_word_cloud(
-    path: &PathBuf,
-    notify_group: i64,
-    db: &sqlx::SqlitePool,
-) -> Result<Vec<u8>> {
+async fn make_word_cloud(path: &Path, notify_group: i64, db: &sqlx::SqlitePool) -> Result<Vec<u8>> {
     let end_time = chrono::Utc::now();
     let start_time = end_time - chrono::Duration::days(1) - chrono::Duration::minutes(10);
 
@@ -180,15 +175,19 @@ async fn make_word_cloud(
         .stderr(Stdio::piped())
         .spawn()?;
 
-    let stdin = child.stdin.as_mut().unwrap();
-    stdin.write_all(messages.as_bytes()).await?;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(messages.as_bytes())
+        .await?;
 
     let output = child.wait_with_output().await?;
 
     Ok(output.stdout)
 }
 
-async fn send_word_cloud(bot: &RuntimeBot, group_id: i64, path: &PathBuf, db: &sqlx::SqlitePool) {
+async fn send_word_cloud(bot: &RuntimeBot, group_id: i64, path: &Path, db: &sqlx::SqlitePool) {
     let image = match make_word_cloud(path, group_id, db).await {
         Ok(image) => image,
         Err(e) => {

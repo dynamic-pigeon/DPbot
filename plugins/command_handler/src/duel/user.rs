@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    duel::problem::get_last_submission,
+    duel::submission::get_last_submission,
     sql::{self, duel::user::CommitUserExt},
     utils::today_utc,
 };
@@ -133,24 +133,15 @@ impl Bind {
 
         info!("Submission: {:#?}", submission);
 
-        let problem = submission
-            .get("problem")
-            .ok_or_else(|| anyhow::anyhow!("提交记录中缺少 'problem' 字段"))?;
+        let problem = submission.problem;
 
-        let contest_id = problem
-            .get("contestId")
-            .and_then(|v| v.as_i64())
-            .ok_or_else(|| anyhow::anyhow!("解析 contestId 失败"))?;
+        let contest_id = problem.contest_id;
 
-        let index = problem
-            .get("index")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("解析 index 失败"))?;
+        let index = problem.index;
 
         let verdict = submission
-            .get("verdict")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("解析 verdict 失败"))?;
+            .verdict
+            .ok_or(anyhow::anyhow!("该提交没有评测结果"))?;
 
         if contest_id != 1 || index != "A" {
             return Err(anyhow::anyhow!("请提交到指定题目 (Contest 1, Problem A)"));
@@ -160,10 +151,7 @@ impl Bind {
             return Err(anyhow::anyhow!("需要提交一个导致编译错误(CE)的代码"));
         }
 
-        let creation_time_seconds = submission
-            .get("creationTimeSeconds")
-            .and_then(|v| v.as_i64())
-            .ok_or_else(|| anyhow::anyhow!("解析提交时间失败"))?;
+        let creation_time_seconds = submission.creation_time_seconds;
 
         let end_time = chrono::DateTime::from_timestamp(creation_time_seconds, 0)
             .ok_or_else(|| anyhow::anyhow!("无效的时间戳"))?;

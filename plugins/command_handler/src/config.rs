@@ -2,6 +2,19 @@ use std::sync::LazyLock;
 
 use kovi::serde_json::{self, Value};
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub(crate) struct Config {
+    pub py_analyzer_path: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            py_analyzer_path: "python3".to_string(),
+        }
+    }
+}
+
 pub static COMMAND: LazyLock<Value> = LazyLock::new(|| {
     serde_json::json!({
         "duel": {
@@ -29,7 +42,8 @@ pub static COMMAND: LazyLock<Value> = LazyLock::new(|| {
         },
         "cf": {
             "rating": "cf_rating",
-            "analyze": "cf_analyze"
+            "analyze": "cf_analyze",
+            "recommend": "cf_recommend"
         },
         "at": {
             "rating": "at_rating"

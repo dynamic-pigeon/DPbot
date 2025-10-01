@@ -6,7 +6,8 @@ use kovi::serde_json::{Value, json};
 use kovi::utils::load_json_data;
 use kovi::{Message, PluginBuilder as plugin};
 use std::iter::Iterator;
-use std::sync::Arc;
+
+use crate::config::{DUEL_HELP, HELP};
 
 mod config;
 
@@ -38,29 +39,19 @@ async fn main() {
         .unwrap();
     }
 
-    let help_path = data_path.join("help.json");
-    let help = load_json_data(Value::default(), help_path).unwrap();
-    let help = Arc::new(help);
-
-    let duel_help_path = data_path.join("duel_help.json");
-    let duel_help = load_json_data(Value::default(), duel_help_path).unwrap();
-    let duel_help = Arc::new(duel_help);
-
-    plugin::on_msg(move |event| {
-        let help = help.clone();
-        let duel_help = duel_help.clone();
-        async move {
-            let text = event.borrow_text().unwrap_or_default();
-            if text.starts_with("/help") {
-                handle_help(&event, &help, &duel_help).await;
-            }
+    plugin::on_msg(move |event| async move {
+        let text = event.borrow_text().unwrap_or_default();
+        if text.starts_with("/help") {
+            handle_help(&event).await;
         }
     });
 }
 
-async fn handle_help(event: &MsgEvent, help: &Value, duel_help: &Value) {
+async fn handle_help(event: &MsgEvent) {
     let text = event.borrow_text().unwrap_or_default();
     let text = text[5..].trim();
+
+    let help = &*HELP;
 
     if text.is_empty() {
         let list = help
@@ -80,6 +71,7 @@ async fn handle_help(event: &MsgEvent, help: &Value, duel_help: &Value) {
 
     // 特殊处理
     if text == "duel" {
+        let duel_help = &*DUEL_HELP;
         let arr = match duel_help {
             Value::Array(arr) => arr,
             _ => {
@@ -91,6 +83,41 @@ async fn handle_help(event: &MsgEvent, help: &Value, duel_help: &Value) {
         let segs = arr
             .iter()
             .map(|v| {
+                Segment::new(
+                    "node",
+                    json!({
+                        "content": [v]
+                    }),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let msg = Message::from(segs);
+
+        event.reply(msg);
+
+        return;
+    }
+
+    if text == "cf" {
+        let cf_help = &*config::CF_HELP;
+        let arr = match cf_help {
+            Value::Array(arr) => arr,
+            _ => {
+                event.reply("未找到该模块");
+                return;
+            }
+        };
+
+        let segs = arr
+            .iter()
+            .map(|v| {
+                let v = json!({
+                    "type": "text",
+                    "data": {
+                        "text": v
+                    }
+                });
                 Segment::new(
                     "node",
                     json!({

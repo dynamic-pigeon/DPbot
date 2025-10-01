@@ -10,8 +10,9 @@ use kovi::{
     tokio::sync::RwLock,
 };
 use serde::Deserialize;
+use utils::retry::retry;
 
-use crate::{retry::retry, today_utc};
+use crate::today_utc;
 
 type ContestSet = Vec<Arc<Contest>>;
 

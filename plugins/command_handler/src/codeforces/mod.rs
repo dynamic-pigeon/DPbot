@@ -7,6 +7,8 @@ use crate::{
     utils::{IdOrText, user_id_or_text},
 };
 
+pub mod recommend;
+
 pub async fn rating(event: &MsgEvent, args: &[String]) {
     let user = match args.get(2).map(|s| user_id_or_text(s)).unwrap() {
         Ok(v) => v,

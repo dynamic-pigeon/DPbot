@@ -71,7 +71,7 @@ async fn get_ocr(img_base64: &str) -> Result<String> {
 
     child
         .stdin
-        .as_mut()
+        .take()
         .unwrap()
         .write_all(img_base64.as_bytes())
         .await?;
