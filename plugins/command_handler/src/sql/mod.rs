@@ -49,7 +49,7 @@ pub async fn init(path: &str) -> Result<()> {
 
 pub async fn connect(path: &str) -> Result<()> {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
+        .max_connections(2)
         .connect(path)
         .await?;
 

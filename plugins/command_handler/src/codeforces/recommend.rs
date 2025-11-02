@@ -2,13 +2,19 @@ use anyhow::Result;
 use kovi::MsgEvent;
 use rand::Rng;
 use rand::seq::SliceRandom;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::{
     duel::{problem::get_problems, submission::get_recent_submissions},
     utils::{IdOrText, get_user_rating},
 };
+
+// 常量定义
+const MAX_RECOMMEND_COUNT: usize = 10;
+const MIN_RATING: i64 = 800;
+const MAX_RATING: i64 = 3500;
+const RATING_STEP: i64 = 100;
 
 #[derive(Debug, Clone)]
 pub enum RecommendDifficulty {
@@ -39,9 +45,18 @@ impl RecommendDifficulty {
     fn get_rating_range(&self, user_rating: i64) -> (i64, i64) {
         // 基于ELO系统的解题概率计算，估算合适的rating范围
         match self {
-            Self::Easy => ((user_rating - 400).max(800), (user_rating - 100).max(800)),
-            Self::Moderate => ((user_rating - 200).max(800), (user_rating + 200).min(3500)),
-            Self::Difficult => ((user_rating + 100).min(3500), (user_rating + 600).min(3500)),
+            Self::Easy => (
+                (user_rating - 400).max(MIN_RATING),
+                (user_rating - 100).max(MIN_RATING),
+            ),
+            Self::Moderate => (
+                (user_rating - 200).max(MIN_RATING),
+                (user_rating + 200).min(MAX_RATING),
+            ),
+            Self::Difficult => (
+                (user_rating + 100).min(MAX_RATING),
+                (user_rating + 600).min(MAX_RATING),
+            ),
         }
     }
 }
@@ -52,6 +67,56 @@ struct CommandArgs {
     exclude_solved: bool,
     count: usize,
     specific_rating: Option<i64>,
+}
+
+pub async fn recommend(event: &MsgEvent, args: &[String]) {
+    let cmd_args = parse_args(args);
+    let user = IdOrText::At(event.user_id);
+
+    // 获取用户CF ID和rating
+    let (cf_id, rating) = match get_user_info(&user).await {
+        Ok(info) => info,
+        Err(e) => {
+            event.reply(e.to_string());
+            return;
+        }
+    };
+
+    // 确定推荐范围并通知用户
+    let (min_rating, max_rating, filter_msg) = get_rating_range(&cmd_args, rating);
+    event.reply(format!("正在为您推荐{}", filter_msg));
+
+    // 获取用户提交数据和题库
+    let (tag_weight, solved_problems) =
+        get_user_submission_data(&cf_id, cmd_args.exclude_solved).await;
+
+    let problems = match get_problems().await {
+        Ok(p) => p,
+        Err(e) => {
+            event.reply(format!("获取题库失败: {}", e));
+            return;
+        }
+    };
+
+    // 过滤候选题目
+    let candidates = filter_candidate_problems(&problems, min_rating, max_rating, &solved_problems);
+
+    if candidates.is_empty() {
+        let msg = if cmd_args.exclude_solved {
+            "没有找到合适的题目（已排除解决过的题目）"
+        } else {
+            "没有找到合适的题目"
+        };
+        event.reply(msg);
+        return;
+    }
+
+    // 选择题目
+    let final_problems = select_problems(&candidates, &tag_weight, &cmd_args, rating);
+
+    // 发送结果
+    let msg = format_recommendation_output(&final_problems, &cmd_args);
+    event.reply(msg);
 }
 
 // 解析命令行参数
@@ -72,13 +137,13 @@ fn parse_args(args: &[String]) -> CommandArgs {
             && i + 1 < args.len()
             && let Ok(c) = args[i + 1].parse::<usize>()
         {
-            count = c.min(10); // 最多推荐10个
+            count = c.min(MAX_RECOMMEND_COUNT);
             i += 1;
         } else if (arg == "--rating" || arg == "-r")
             && i + 1 < args.len()
             && let Ok(r) = args[i + 1].parse::<i64>()
-            && (800..=3500).contains(&r)
-            && r % 100 == 0
+            && (MIN_RATING..=MAX_RATING).contains(&r)
+            && r % RATING_STEP == 0
         {
             specific_rating = Some(r);
             i += 1;
@@ -95,16 +160,34 @@ fn parse_args(args: &[String]) -> CommandArgs {
     }
 }
 
-// 计算题目的tag权重分数
-fn calculate_tag_score(
-    problem: &crate::duel::problem::Problem,
-    tag_weight: &std::collections::HashMap<String, usize>,
-) -> usize {
-    problem
-        .tags
-        .iter()
-        .map(|t| tag_weight.get(t).copied().unwrap_or(0))
-        .sum::<usize>()
+// 选择推荐题目
+fn select_problems<'a>(
+    candidates: &[&'a Arc<crate::duel::problem::Problem>],
+    tag_weight: &HashMap<String, usize>,
+    cmd_args: &CommandArgs,
+    rating: i64,
+) -> Vec<&'a Arc<crate::duel::problem::Problem>> {
+    let mut rng = rand::rng();
+    if cmd_args.specific_rating.is_some() {
+        // 指定rating：随机选择
+        let mut shuffled = candidates.to_vec();
+        shuffled.shuffle(&mut rng);
+        shuffled.into_iter().take(cmd_args.count).collect()
+    } else {
+        // 根据难度：加权随机选择
+        let target_rating = match cmd_args.difficulty {
+            RecommendDifficulty::Easy => rating - 250,
+            RecommendDifficulty::Moderate => rating,
+            RecommendDifficulty::Difficult => rating + 350,
+        };
+
+        let weights: Vec<f64> = candidates
+            .iter()
+            .map(|p| calculate_problem_weight(p, tag_weight, target_rating))
+            .collect();
+
+        weighted_random_select(candidates, &weights, cmd_args.count, &mut rng)
+    }
 }
 
 // 过滤出符合条件的候选题目
@@ -117,24 +200,22 @@ fn filter_candidate_problems<'a>(
     problems
         .iter()
         .filter(|p| {
-            // 按rating过滤
-            if let Some(r) = p.rating {
-                if r < min_rating || r > max_rating {
-                    return false;
-                }
-            } else {
-                return false;
-            }
+            // 检查rating是否在范围内
+            let rating_in_range = p
+                .rating
+                .map(|r| (min_rating..=max_rating).contains(&r))
+                .unwrap_or(false);
 
-            // 过滤已解决题目
-            if let Some(solved) = solved_problems
-                && solved.contains(&(p.contest_id, p.index.clone()))
-            {
-                return false;
-            }
+            // 检查是否已解决
+            let not_solved = solved_problems
+                .as_ref()
+                .map(|solved| !solved.contains(&(p.contest_id, p.index.clone())))
+                .unwrap_or(true);
 
-            // 过滤特殊题目
-            !p.tags.iter().any(|tag| tag == "*special")
+            // 检查是否为特殊题目
+            let not_special = !p.tags.iter().any(|tag| tag == "*special");
+
+            rating_in_range && not_solved && not_special
         })
         .collect()
 }
@@ -144,33 +225,47 @@ fn format_recommendation_output(
     problems: &[&Arc<crate::duel::problem::Problem>],
     cmd_args: &CommandArgs,
 ) -> String {
-    if problems.len() == 1 {
-        let problem = &problems[0];
-        let link = format!(
-            "https://codeforces.com/problemset/problem/{}/{}",
-            problem.contest_id, problem.index
-        );
-        format!(
-            "推荐题目：\n题目：{} {}\n难度：{}\n标签：{}\n链接：{}",
-            problem.contest_id,
-            problem.index,
-            problem.rating.unwrap_or(0),
-            problem.tags.join(", "),
-            link
-        )
-    } else {
-        let list_title = if let Some(specific_r) = cmd_args.specific_rating {
-            format!("推荐的rating {} 题目：\n", specific_r)
-        } else {
-            format!("推荐的{:?}难度题目：\n", cmd_args.difficulty)
-        };
-        let mut msg = list_title;
-        for (i, problem) in problems.iter().enumerate() {
+    match problems {
+        [problem] => format_single_problem(problem),
+        problems => format_multiple_problems(problems, cmd_args),
+    }
+}
+
+// 格式化单个题目
+fn format_single_problem(problem: &Arc<crate::duel::problem::Problem>) -> String {
+    let link = format!(
+        "https://codeforces.com/problemset/problem/{}/{}",
+        problem.contest_id, problem.index
+    );
+    format!(
+        "推荐题目：\n题目：{} {}\n难度：{}\n标签：{}\n链接：{}",
+        problem.contest_id,
+        problem.index,
+        problem.rating.unwrap_or(0),
+        problem.tags.join(", "),
+        link
+    )
+}
+
+// 格式化多个题目
+fn format_multiple_problems(
+    problems: &[&Arc<crate::duel::problem::Problem>],
+    cmd_args: &CommandArgs,
+) -> String {
+    let title = match cmd_args.specific_rating {
+        Some(r) => format!("推荐的rating {} 题目：\n", r),
+        None => format!("推荐的{:?}难度题目：\n", cmd_args.difficulty),
+    };
+
+    problems
+        .iter()
+        .enumerate()
+        .fold(title, |mut acc, (i, problem)| {
             let link = format!(
                 "https://codeforces.com/problemset/problem/{}/{}",
                 problem.contest_id, problem.index
             );
-            msg += &format!(
+            acc.push_str(&format!(
                 "{}. {} {} (难度: {})\n   标签: {}\n   链接: {}\n\n",
                 i + 1,
                 problem.contest_id,
@@ -178,48 +273,42 @@ fn format_recommendation_output(
                 problem.rating.unwrap_or(0),
                 problem.tags.join(", "),
                 link
-            );
-        }
-        msg
-    }
+            ));
+            acc
+        })
 }
 
 // 获取用户提交记录相关的数据
 async fn get_user_submission_data(
     cf_id: &str,
     exclude_solved: bool,
-) -> (
-    std::collections::HashMap<String, usize>,
-    Option<HashSet<(i64, String)>>,
-) {
+) -> (HashMap<String, usize>, Option<HashSet<(i64, String)>>) {
+    let Ok(submissions) = get_recent_submissions(cf_id).await else {
+        return (HashMap::new(), None);
+    };
+
     // 统计用户未通过题目的 tag 权重
-    let mut tag_weight = std::collections::HashMap::new();
-    let mut solved_problems = None;
+    let tag_weight = submissions
+        .iter()
+        .filter(|s| !s.is_accepted())
+        .flat_map(|s| &s.problem.tags)
+        .fold(HashMap::new(), |mut acc, tag| {
+            *acc.entry(tag.clone()).or_insert(0) += 1;
+            acc
+        });
 
-    // 只调用一次 get_recent_submissions
-    if let Ok(submissions) = get_recent_submissions(cf_id).await {
-        // 处理tag权重
-        for sub in &submissions {
-            if sub.is_accepted() {
-                for tag in &sub.problem.tags {
-                    *tag_weight.entry(tag.clone()).or_insert(0) += 1;
-                }
-            }
-        }
+    // 如果需要排除已解决题目，处理已解决集合
+    let solved_problems = if exclude_solved {
+        let solved: HashSet<_> = submissions
+            .iter()
+            .filter(|s| s.is_accepted())
+            .map(|s| (s.problem.contest_id, s.problem.index.clone()))
+            .collect();
 
-        // 如果需要排除已解决题目，处理已解决集合
-        if exclude_solved {
-            let solved: HashSet<_> = submissions
-                .iter()
-                .filter(|s| s.is_accepted())
-                .map(|s| (s.problem.contest_id, s.problem.index.clone()))
-                .collect();
-
-            if !solved.is_empty() {
-                solved_problems = Some(solved);
-            }
-        }
-    }
+        (!solved.is_empty()).then_some(solved)
+    } else {
+        None
+    };
 
     (tag_weight, solved_problems)
 }
@@ -247,127 +336,78 @@ fn get_rating_range(cmd_args: &CommandArgs, user_rating: i64) -> (i64, i64, Stri
     }
 }
 
-pub async fn recommend(event: &MsgEvent, args: &[String]) {
-    // 解析参数
-    let cmd_args = parse_args(args);
+// 加权随机选择题目
+fn weighted_random_select<'a>(
+    candidates: &[&'a Arc<crate::duel::problem::Problem>],
+    weights: &[f64],
+    count: usize,
+    rng: &mut impl Rng,
+) -> Vec<&'a Arc<crate::duel::problem::Problem>> {
+    let mut indices: Vec<usize> = (0..candidates.len()).collect();
+    let desired_count = count.min(candidates.len());
+    let mut selected_indices = Vec::with_capacity(desired_count);
 
-    // 用户钉死为当前用户
-    let user = IdOrText::At(event.user_id);
+    while selected_indices.len() < desired_count && !indices.is_empty() {
+        let total_weight: f64 = indices.iter().map(|&i| weights[i]).sum();
 
-    let cf_id = match get_cf_id(&user).await {
-        Ok(cf_id) => cf_id,
-        Err(e) => {
-            event.reply(e.to_string());
-            return;
+        // 如果所有权重为零或接近零，则随机选择剩余题目
+        if total_weight <= f64::EPSILON {
+            indices.shuffle(rng);
+            let remaining = desired_count - selected_indices.len();
+            selected_indices.extend(indices.iter().take(remaining).copied());
+            break;
         }
-    };
 
-    let rating = match get_user_rating(&cf_id).await {
-        Ok(r) => r,
-        Err(e) => {
-            event.reply(format!("获取rating失败: {}", e));
-            return;
-        }
-    };
+        // 加权随机选择一个题目
+        let pick = rng.random_range(0.0..total_weight);
+        let selected_pos = indices
+            .iter()
+            .enumerate()
+            .scan(0.0, |acc, (pos, &idx)| {
+                *acc += weights[idx];
+                Some((pos, *acc))
+            })
+            .find(|(_, cumulative)| *cumulative >= pick)
+            .map(|(pos, _)| pos)
+            .unwrap_or_else(|| rng.random_range(0..indices.len()));
 
-    // 根据是否指定了具体rating来确定过滤范围
-    let (min_rating, max_rating, filter_msg) = get_rating_range(&cmd_args, rating);
-
-    event.reply(format!("正在为您推荐{}", filter_msg));
-
-    // 获取用户提交数据，包括tag权重和已解题列表
-    let (tag_weight, solved_problems) =
-        get_user_submission_data(&cf_id, cmd_args.exclude_solved).await;
-
-    let problems = match get_problems().await {
-        Ok(p) => p,
-        Err(e) => {
-            event.reply(format!("获取题库失败: {}", e));
-            return;
-        }
-    };
-
-    // 过滤候选题目
-    let candidates = filter_candidate_problems(&problems, min_rating, max_rating, &solved_problems);
-
-    if candidates.is_empty() {
-        let filter_msg = if cmd_args.exclude_solved {
-            "（已排除解决过的题目）"
-        } else {
-            ""
-        };
-        event.reply(format!("没有找到合适的题目{}", filter_msg));
-        return;
+        selected_indices.push(indices.remove(selected_pos));
     }
 
-    // 排序逻辑
-    let mut rng = rand::rng();
+    selected_indices.iter().map(|&i| candidates[i]).collect()
+}
 
-    let final_problems: Vec<_> = if cmd_args.specific_rating.is_some() {
-        // 如果指定了具体rating，随机打乱即可
-        let mut shuffled = candidates.to_vec();
-        shuffled.shuffle(&mut rng);
-        shuffled.into_iter().take(cmd_args.count).collect()
-    } else {
-        let target_rating = match cmd_args.difficulty {
-            RecommendDifficulty::Easy => rating - 250,
-            RecommendDifficulty::Moderate => rating,
-            RecommendDifficulty::Difficult => rating + 350,
-        };
+// 计算题目权重
+fn calculate_problem_weight(
+    problem: &crate::duel::problem::Problem,
+    tag_weight: &HashMap<String, usize>,
+    target_rating: i64,
+) -> f64 {
+    let score = calculate_tag_score(problem, tag_weight) as f64;
+    let diff = (problem.rating.unwrap_or(target_rating) - target_rating).abs() as f64;
+    let rating_bonus = 1.0 / (1.0 + diff / 100.0);
+    (score + 1.0) * rating_bonus
+}
 
-        let mut candidate_vec = candidates;
-        let mut weights: Vec<f64> = candidate_vec
-            .iter()
-            .map(|p| {
-                let score = calculate_tag_score(p, &tag_weight) as f64;
-                let diff = (p.rating.unwrap_or(target_rating) - target_rating).abs() as f64;
-                let rating_bonus = 1.0 / (1.0 + diff / 100.0);
-                (score + 1.0) * rating_bonus
-            })
-            .collect();
+// 计算题目的tag权重分数
+fn calculate_tag_score(
+    problem: &crate::duel::problem::Problem,
+    tag_weight: &std::collections::HashMap<String, usize>,
+) -> usize {
+    problem
+        .tags
+        .iter()
+        .map(|t| tag_weight.get(t).copied().unwrap_or(0))
+        .sum::<usize>()
+}
 
-        let mut selected = Vec::new();
-        let mut remaining = cmd_args.count.min(candidate_vec.len());
-
-        while remaining > 0 && !candidate_vec.is_empty() {
-            let total_weight: f64 = weights.iter().sum();
-            if total_weight <= f64::EPSILON {
-                candidate_vec.shuffle(&mut rng);
-                selected.extend(candidate_vec.into_iter().take(remaining));
-                break;
-            }
-
-            let mut pick = rng.random_range(0.0..total_weight);
-            let mut idx = 0;
-            let mut picked = false;
-            while idx < weights.len() {
-                if pick < weights[idx] {
-                    selected.push(candidate_vec.remove(idx));
-                    weights.remove(idx);
-                    remaining -= 1;
-                    picked = true;
-                    break;
-                }
-                pick -= weights[idx];
-                idx += 1;
-            }
-
-            if !picked {
-                // 浮点误差导致未命中，退化为随机挑选
-                let rand_idx = rng.random_range(0..candidate_vec.len());
-                let chosen = candidate_vec.remove(rand_idx);
-                selected.push(chosen);
-                weights.remove(rand_idx);
-                remaining -= 1;
-            }
-        }
-
-        selected
-    };
-
-    // 格式化并发送输出结果
-    let msg = format_recommendation_output(&final_problems, &cmd_args);
-    event.reply(msg);
+// 获取用户信息（CF ID 和 rating）
+async fn get_user_info(user: &IdOrText<'_>) -> Result<(String, i64)> {
+    let cf_id = get_cf_id(user).await?;
+    let rating = get_user_rating(&cf_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("获取rating失败: {}", e))?;
+    Ok((cf_id, rating))
 }
 
 async fn get_cf_id(uit: &IdOrText<'_>) -> Result<String> {
@@ -446,14 +486,14 @@ mod tests {
         // 测试边界情况 - 低rating用户
         let low_rating = 900;
         let (min, max) = easy.get_rating_range(low_rating);
-        assert_eq!(min, 800); // 最小rating限制
-        assert_eq!(max, 800); // 最小rating限制
+        assert_eq!(min, MIN_RATING); // 最小rating限制
+        assert_eq!(max, MIN_RATING); // 最小rating限制
 
         // 测试边界情况 - 高rating用户
         let high_rating = 3000;
         let (min, max) = difficult.get_rating_range(high_rating);
         assert_eq!(min, 3100); // 3000 + 100
-        assert_eq!(max, 3500); // 最大rating限制
+        assert_eq!(max, MAX_RATING); // 最大rating限制
     }
 
     #[test]
@@ -470,20 +510,20 @@ mod tests {
     #[test]
     fn test_valid_rating_values() {
         // 测试有效的rating值
-        let valid_ratings = [800, 900, 1000, 1500, 2000, 3000, 3500];
+        let valid_ratings = [MIN_RATING, 900, 1000, 1500, 2000, 3000, MAX_RATING];
         for rating in valid_ratings {
             assert!(
-                (800..=3500).contains(&rating) && rating % 100 == 0,
+                (MIN_RATING..=MAX_RATING).contains(&rating) && rating % RATING_STEP == 0,
                 "Rating {} should be valid",
                 rating
             );
         }
 
         // 测试无效的rating值
-        let invalid_ratings = [799, 850, 3501, 1234];
+        let invalid_ratings = [MIN_RATING - 1, 850, MAX_RATING + 1, 1234];
         for rating in invalid_ratings {
             assert!(
-                !((800..=3500).contains(&rating) && rating % 100 == 0),
+                !((MIN_RATING..=MAX_RATING).contains(&rating) && rating % RATING_STEP == 0),
                 "Rating {} should be invalid",
                 rating
             );

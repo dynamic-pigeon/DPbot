@@ -1,6 +1,7 @@
 use kovi::{
     MsgEvent,
     bot::message::Segment,
+    chrono::{self, Local},
     log::{debug, error},
     serde_json::json,
 };
@@ -13,7 +14,7 @@ use crate::{
         duel::{challenge::CommitChallengeExt, user::CommitUserExt},
         utils::Commit,
     },
-    utils::{IdOrText, today_utc, user_id_or_text},
+    utils::{IdOrText, user_id_or_text},
 };
 
 use super::{
@@ -121,7 +122,7 @@ pub async fn ongoing(event: &MsgEvent) {
         };
 
         // 计算持续时间
-        let duration = today_utc().signed_duration_since(challenge.time);
+        let duration = chrono::Utc::now().signed_duration_since(challenge.start_time);
         let duration = format!(
             "{}d {}h {}m {}s",
             duration.num_days(),
@@ -169,9 +170,27 @@ pub async fn give_up(event: &MsgEvent) {
         }
     };
 
+    let user1_pre_rating = match sql::duel::user::get_user(challenge.user1).await {
+        Ok(user) => user.rating,
+        Err(e) => {
+            handle_error(event, e);
+            return;
+        }
+    };
+
+    let user2_pre_rating = match sql::duel::user::get_user(challenge.user2).await {
+        Ok(user) => user.rating,
+        Err(e) => {
+            handle_error(event, e);
+            return;
+        }
+    };
+
     // 执行放弃
     match challenge.give_up(event.user_id).await {
-        Ok(_) => handle_challenge_result(event, &challenge).await,
+        Ok(_) => {
+            handle_challenge_result(event, &challenge, user1_pre_rating, user2_pre_rating).await
+        }
         Err(e) => handle_error(event, e),
     }
 }
@@ -199,7 +218,7 @@ pub async fn daily_finish(event: &MsgEvent) {
     };
 
     // 检查是否已完成
-    let now = today_utc().format("%Y-%m-%d").to_string();
+    let now = Local::now().format("%Y-%m-%d").to_string();
     if user.last_daily == now {
         event.reply("你今天已经完成了每日任务");
         return;
@@ -299,31 +318,26 @@ pub async fn problem(event: &MsgEvent, args: &[String]) {
 //
 
 /// 处理挑战结果
-async fn handle_challenge_result(event: &MsgEvent, challenge: &Challenge) {
-    // 获取用户信息
-    let mut user1 = match sql::duel::user::get_user(challenge.user1).await {
-        Ok(user) => user,
-        Err(e) => {
-            handle_error(event, e);
-            return;
-        }
-    };
-
-    let mut user2 = match sql::duel::user::get_user(challenge.user2).await {
-        Ok(user) => user,
-        Err(e) => {
-            handle_error(event, e);
-            return;
-        }
-    };
-
+async fn handle_challenge_result(
+    event: &MsgEvent,
+    challenge: &Challenge,
+    user1_pre_rating: i64,
+    user2_pre_rating: i64,
+) {
     // 确定胜者和败者
-    let (winner, loser) = match challenge.status {
-        ChallengeStatus::Finished(0) => (challenge.user1, challenge.user2),
-        ChallengeStatus::Finished(1) => {
-            std::mem::swap(&mut user1, &mut user2);
-            (challenge.user2, challenge.user1)
-        }
+    let (winner, loser, winner_pre_rating, loser_pre_rating) = match challenge.status {
+        ChallengeStatus::Finished(0) => (
+            challenge.user1,
+            challenge.user2,
+            user1_pre_rating,
+            user2_pre_rating,
+        ),
+        ChallengeStatus::Finished(1) => (
+            challenge.user2,
+            challenge.user1,
+            user2_pre_rating,
+            user1_pre_rating,
+        ),
         _ => {
             event.reply("未知错误：决斗未结束");
             return;
@@ -349,16 +363,18 @@ async fn handle_challenge_result(event: &MsgEvent, challenge: &Challenge) {
         }
     };
 
+    let looser_id = loser_user.cf_id.clone().unwrap_or_default();
+
     // 生成结果消息
     let result = format!(
         "比赛结束，{winner_id} 取得了胜利。\nrating 变化: \n{}: {} + {} = {}\n{}: {} - {} = {}",
-        user1.cf_id.as_ref().unwrap_or(&"未绑定".to_string()),
-        user1.rating,
-        winner_user.rating - user1.rating,
+        winner_id,
+        winner_pre_rating,
+        winner_user.rating - winner_pre_rating,
         winner_user.rating,
-        user2.cf_id.as_ref().unwrap_or(&"未绑定".to_string()),
-        user2.rating,
-        user2.rating - loser_user.rating,
+        looser_id,
+        loser_pre_rating,
+        loser_user.rating - loser_pre_rating,
         loser_user.rating
     );
 
@@ -378,9 +394,27 @@ pub async fn judge(event: &MsgEvent) {
         }
     };
 
+    let user1_pre_rating = match sql::duel::user::get_user(challenge.user1).await {
+        Ok(user) => user.rating,
+        Err(e) => {
+            handle_error(event, e);
+            return;
+        }
+    };
+
+    let user2_pre_rating = match sql::duel::user::get_user(challenge.user2).await {
+        Ok(user) => user.rating,
+        Err(e) => {
+            handle_error(event, e);
+            return;
+        }
+    };
+
     // 执行判定
     match challenge.judge().await {
-        Ok(_) => handle_challenge_result(event, &challenge).await,
+        Ok(_) => {
+            handle_challenge_result(event, &challenge, user1_pre_rating, user2_pre_rating).await
+        }
         Err(e) => handle_error(event, e),
     }
 }

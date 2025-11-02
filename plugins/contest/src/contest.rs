@@ -5,14 +5,12 @@ use std::{
 
 use anyhow::Result;
 use kovi::{
-    chrono::{self, Datelike, FixedOffset},
+    chrono::{self, Local},
     log::{debug, error, info},
     tokio::sync::RwLock,
 };
 use serde::Deserialize;
 use utils::retry::retry;
-
-use crate::today_utc;
 
 type ContestSet = Vec<Arc<Contest>>;
 
@@ -39,9 +37,8 @@ impl Contest {
     pub fn start_time(&self) -> String {
         let start = chrono::NaiveDateTime::parse_from_str(&self.start, "%Y-%m-%dT%H:%M:%S")
             .unwrap()
-            .and_utc();
-        let offset = FixedOffset::east_opt(8 * 3600).unwrap();
-        let start = start.with_timezone(&offset);
+            .and_utc()
+            .with_timezone(&Local);
         format!("{}", start.format("%Y-%m-%d(%A) %H:%M"))
     }
 }
@@ -92,16 +89,21 @@ pub async fn init() -> Result<usize> {
         let contests = CONTESTS.read().await;
         Arc::clone(&contests)
     };
-    let now = today_utc();
+    let now = Local::now();
+    let today_start_time = Local::now()
+        .date_naive()
+        .and_hms_opt(8, 0, 0)
+        .unwrap()
+        .and_local_timezone(Local)
+        .unwrap();
+
     let mut map: HashMap<_, Vec<Arc<Contest>>> = HashMap::new();
-    let offset = FixedOffset::east_opt(8 * 3600).unwrap();
 
     for contest in contests.iter().cloned() {
         let start = chrono::NaiveDateTime::parse_from_str(&contest.start, "%Y-%m-%dT%H:%M:%S")?
             .and_utc()
-            .with_timezone(&offset)
-            .to_utc();
-        if start < now || start.num_days_from_ce() != now.num_days_from_ce() {
+            .with_timezone(&Local);
+        if start < now || (start - today_start_time) > chrono::Duration::days(1) {
             continue;
         }
         map.entry(start).or_default().push(contest);
@@ -113,7 +115,6 @@ pub async fn init() -> Result<usize> {
 
     for (time, contests) in map {
         count += contests.len();
-
         let mut contest_msg = String::new();
         for contest in contests.iter() {
             let add = format!("\n\n{}\n{}", contest.event, contest.href);
@@ -123,7 +124,7 @@ pub async fn init() -> Result<usize> {
 
         for sub_time in config.notify_time.iter() {
             let start = time;
-            let now = today_utc();
+            let now = Local::now();
 
             let notify_time = start - chrono::Duration::minutes(*sub_time);
 

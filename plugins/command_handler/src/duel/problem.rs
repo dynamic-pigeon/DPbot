@@ -16,7 +16,7 @@ use crate::utils::fetch;
 
 type ProblemSet = Vec<Arc<Problem>>;
 
-const URL: &str = "https://codeforces.com/api/problemset.problems";
+const PROBLEM_URL: &str = "https://codeforces.com/api/problemset.problems";
 static PROBLEMS: LazyLock<RwLock<Arc<ProblemSet>>> =
     LazyLock::new(|| RwLock::new(Arc::new(Vec::new())));
 
@@ -93,7 +93,7 @@ pub async fn get_problems_by(tags: &[String], rating: i64, qq: i64) -> Result<Pr
 }
 
 async fn filter_by_nag(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Problem>) -> bool> {
-    let (new, not_seen, seen, tags) = filter_help(tags, qq).await?;
+    let (new, seen, tags) = filter_help(tags, qq).await?;
 
     let filter = move |problem: &&Arc<Problem>| -> bool {
         // filter by tags
@@ -108,7 +108,9 @@ async fn filter_by_nag(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Proble
         if new && problem.contest_id > 1000 {
             return false;
         }
-        if not_seen && !seen.contains(&(problem.contest_id, problem.index.clone())) {
+        if let Some(ref seen) = seen
+            && !seen.contains(&(problem.contest_id, problem.index.clone()))
+        {
             return false;
         }
         true
@@ -118,7 +120,7 @@ async fn filter_by_nag(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Proble
 }
 
 async fn filter_by_pos(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Problem>) -> bool> {
-    let (new, not_seen, seen, tags) = filter_help(tags, qq).await?;
+    let (new, seen, tags) = filter_help(tags, qq).await?;
 
     let filter = move |problem: &&Arc<Problem>| -> bool {
         // filter by tags
@@ -133,7 +135,9 @@ async fn filter_by_pos(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Proble
         if new && problem.contest_id <= 1000 {
             return false;
         }
-        if not_seen && seen.contains(&(problem.contest_id, problem.index.clone())) {
+        if let Some(ref seen) = seen
+            && seen.contains(&(problem.contest_id, problem.index.clone()))
+        {
             return false;
         }
         true
@@ -146,13 +150,12 @@ async fn filter_by_pos(tags: &[&str], qq: i64) -> Result<impl FnMut(&&Arc<Proble
 /// 以及不合法的标签
 /// 返回值：
 /// - new: 是否有 new 标签
-/// - not_seen: 是否有 not-seen 标签
 /// - seen: 已经提交过的题目
 /// - tags: 过滤后的标签
 async fn filter_help<'a>(
     tags: &[&'a str],
     qq: i64,
-) -> Result<(bool, bool, HashSet<(i64, String)>, Vec<&'a str>)> {
+) -> Result<(bool, Option<HashSet<(i64, String)>>, Vec<&'a str>)> {
     let mut new = false;
     let mut not_seen = false;
 
@@ -180,7 +183,7 @@ async fn filter_help<'a>(
         };
 
         let submissions = get_recent_submissions(&cf_id).await.unwrap_or_default();
-        submissions
+        let seen = submissions
             .into_iter()
             .filter(|submission| submission.is_accepted())
             .map(|submission| {
@@ -189,12 +192,13 @@ async fn filter_help<'a>(
                 let index = problem.index;
                 (contest_id, index)
             })
-            .collect::<HashSet<_>>()
+            .collect::<HashSet<_>>();
+        Some(seen)
     } else {
-        HashSet::new()
+        None
     };
 
-    Ok((new, not_seen, seen, tags))
+    Ok((new, seen, tags))
 }
 
 fn check_tags(tags: &[&str]) -> Result<()> {
@@ -219,7 +223,7 @@ fn check_tags(tags: &[&str]) -> Result<()> {
 }
 
 async fn fetch_problems() -> Result<ProblemSet, Error> {
-    let res = fetch(URL).await?;
+    let res = fetch(PROBLEM_URL).await?;
 
     let body = res.json::<Value>().await?;
     let status = body

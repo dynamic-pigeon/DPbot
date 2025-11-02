@@ -37,7 +37,7 @@ async fn main() {
     }
 
     let db = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
+        .max_connections(3)
         .connect(db_path.to_str().unwrap())
         .await
         .unwrap();
@@ -58,12 +58,12 @@ async fn main() {
             let config = CONFIG.get().unwrap();
             let notify_group = &config.notify_group;
 
-            for group_id in notify_group {
+            for &group_id in notify_group {
                 let bot = Arc::clone(&bot);
                 let path = Arc::clone(&path);
                 let db = Arc::clone(&db);
                 kovi::spawn(async move {
-                    send_word_cloud(&bot, *group_id, &path, &db).await;
+                    send_word_cloud(&bot, group_id, &path, &db).await;
                 });
             }
 
@@ -189,7 +189,12 @@ async fn make_word_cloud(path: &Path, notify_group: i64, db: &sqlx::SqlitePool) 
 
 async fn send_word_cloud(bot: &RuntimeBot, group_id: i64, path: &Path, db: &sqlx::SqlitePool) {
     let image = match make_word_cloud(path, group_id, db).await {
-        Ok(image) => image,
+        Ok(image) if !image.is_empty() => image,
+        Ok(image) => {
+            assert!(image.is_empty());
+            info!("word cloud is empty, group_id: {}", group_id);
+            return;
+        }
         Err(e) => {
             log::error!("make word cloud failed: {}, group_id: {}", e, group_id);
             bot.send_private_msg(
@@ -202,8 +207,8 @@ async fn send_word_cloud(bot: &RuntimeBot, group_id: i64, path: &Path, db: &sqlx
 
     info!("send word cloud to group: {}", group_id);
 
-    let image = STANDARD.encode(&image);
-    let image = format!("base64://{}", image);
+    let image_base64 = STANDARD.encode(&image);
+    let image = format!("base64://{}", image_base64);
     bot.send_group_msg(
         group_id,
         Message::new().add_text("今日词云").add_image(&image),
@@ -250,20 +255,15 @@ struct Config {
     pub secret_id: String,
     #[serde(rename = "SecretKey")]
     pub secret_key: String,
-    #[serde(rename = "PythonPath")]
-    pub python_path: String,
-    pub ocr_path: String,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             wordcloud_cli_path: "wordcloud_cli".to_string(),
-            python_path: "python3".to_string(),
             notify_group: vec![],
             secret_id: "".to_string(),
             secret_key: "".to_string(),
-            ocr_path: "ocr.py".to_string(),
         }
     }
 }

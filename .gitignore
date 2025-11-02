@@ -9,7 +9,7 @@ data/manager/config.json
 kovi.conf.toml
 kovi.plugin.toml
 log
-data/command_handler/codeforces/.venv
+**/.venv
 data/aichat/config.json
 data/aichat/output.html
 data/word_cloud/word_cloud.db

@@ -20,7 +20,7 @@ impl CommitChallengeExt for Commit {
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
 
-        let time = challenge.time.to_rfc3339();
+        let time = challenge.start_time.to_rfc3339();
         let problem = challenge
             .problem
             .as_ref()
@@ -63,7 +63,7 @@ impl CommitChallengeExt for Commit {
         .bind(problem)
         .bind(challenge.user1)
         .bind(challenge.user2)
-        .bind(challenge.time.to_rfc3339())
+        .bind(challenge.start_time.to_rfc3339())
         .execute(&mut **trans)
         .await?;
 
@@ -83,7 +83,7 @@ impl CommitChallengeExt for Commit {
         )
         .bind(challenge.user1)
         .bind(challenge.user2)
-        .bind(challenge.time.to_rfc3339())
+        .bind(challenge.start_time.to_rfc3339())
         .execute(&mut **trans)
         .await?;
 
@@ -104,7 +104,7 @@ impl CommitChallengeExt for Commit {
         .bind(chall.status)
         .bind(chall.user1)
         .bind(chall.user2)
-        .bind(chall.time.to_rfc3339())
+        .bind(chall.start_time.to_rfc3339())
         .execute(&mut **trans)
         .await?;
 

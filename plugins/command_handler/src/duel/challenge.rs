@@ -9,19 +9,18 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::{Decode, Encode, FromRow, Row, Sqlite, Type};
 
 use crate::duel::problem::{Problem, get_problems_by};
-use crate::duel::submission::{Submission, get_last_submission};
-use crate::error::SubmissionError;
+use crate::duel::submission::{Submission, SubmissionError, get_last_submission};
+
 use crate::sql;
 use crate::sql::duel::challenge::CommitChallengeExt;
 use crate::sql::duel::user::CommitUserExt;
 use crate::sql::utils::Commit;
-use crate::utils::today_utc;
 
 #[derive(Clone)]
 pub struct Challenge {
     pub user1: i64,
     pub user2: i64,
-    pub time: DateTime<chrono::Utc>,
+    pub start_time: DateTime<chrono::Utc>,
     pub rating: i64,
     pub tags: Vec<String>,
     pub problem: Option<Problem>,
@@ -98,7 +97,7 @@ impl<'r> FromRow<'r, SqliteRow> for Challenge {
         Ok(Challenge {
             user1,
             user2,
-            time,
+            start_time: time,
             rating,
             tags,
             problem,
@@ -120,7 +119,7 @@ impl Challenge {
         Self {
             user1,
             user2,
-            time,
+            start_time: time,
             rating,
             tags,
             problem,
@@ -168,7 +167,7 @@ impl Challenge {
             return Err(anyhow!("rating 应该是 800 到 3500 之间的整数"));
         }
 
-        let time = today_utc();
+        let time = chrono::Utc::now();
 
         let challenge = Challenge::new(
             user1,

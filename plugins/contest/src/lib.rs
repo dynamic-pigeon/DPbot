@@ -1,10 +1,7 @@
 use std::sync::{Arc, OnceLock};
 
 use kovi::{
-    Message, PluginBuilder as plugin, RuntimeBot,
-    bot::message::Segment,
-    chrono::{DateTime, FixedOffset, Utc},
-    serde_json::json,
+    Message, PluginBuilder as plugin, RuntimeBot, bot::message::Segment, serde_json::json,
     utils::load_json_data,
 };
 
@@ -92,9 +89,4 @@ impl Default for Config {
             username: "".to_string(),
         }
     }
-}
-
-fn today_utc() -> DateTime<Utc> {
-    let offset = FixedOffset::east_opt(8 * 3600).unwrap();
-    Utc::now().with_timezone(&offset).to_utc()
 }

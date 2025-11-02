@@ -1,6 +1,6 @@
 use kovi::serde_json::{self, Value};
 
-use crate::{duel::problem::Problem, error::SubmissionError, utils::fetch};
+use crate::{duel::problem::Problem, utils::fetch};
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct Submission {
@@ -15,6 +15,14 @@ pub struct Submission {
 pub struct Author {
     #[serde(rename = "participantType")]
     pub participant_type: String,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum SubmissionError {
+    #[error("Failed to fetch response")]
+    FetchError,
+    #[error("No submission found")]
+    NoSubmission,
 }
 
 impl Submission {

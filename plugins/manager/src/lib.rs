@@ -69,89 +69,76 @@ async fn handle_help(event: &MsgEvent) {
         return;
     }
 
-    // 特殊处理
-    if text == "duel" {
-        let duel_help = &*DUEL_HELP;
-        let arr = match duel_help {
-            Value::Array(arr) => arr,
-            _ => {
-                event.reply("未找到该模块");
-                return;
-            }
-        };
+    let msg = match text {
+        "duel" => {
+            let duel_help = &*DUEL_HELP;
+            let arr = match duel_help {
+                Value::Array(arr) => arr,
+                _ => {
+                    event.reply("未找到该模块");
+                    return;
+                }
+            };
 
-        let segs = arr
-            .iter()
-            .map(|v| {
-                Segment::new(
-                    "node",
-                    json!({
-                        "content": [v]
-                    }),
-                )
-            })
-            .collect::<Vec<_>>();
+            let segs = arr
+                .iter()
+                .map(|v| {
+                    Segment::new(
+                        "node",
+                        json!({
+                            "content": [v]
+                        }),
+                    )
+                })
+                .collect::<Vec<_>>();
 
-        let msg = Message::from(segs);
-
-        event.reply(msg);
-
-        return;
-    }
-
-    if text == "cf" {
-        let cf_help = &*config::CF_HELP;
-        let arr = match cf_help {
-            Value::Array(arr) => arr,
-            _ => {
-                event.reply("未找到该模块");
-                return;
-            }
-        };
-
-        let segs = arr
-            .iter()
-            .map(|v| {
-                let v = json!({
-                    "type": "text",
-                    "data": {
-                        "text": v
-                    }
-                });
-                Segment::new(
-                    "node",
-                    json!({
-                        "content": [v]
-                    }),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let msg = Message::from(segs);
-
-        event.reply(msg);
-
-        return;
-    }
-
-    let cmd = match help.get(text) {
-        Some(cmd) => cmd,
-        None => {
-            event.reply("未找到该模块");
-            return;
+            Message::from(segs)
         }
-    };
+        "cf" => {
+            let cf_help = &*config::CF_HELP;
 
-    let msg = match cmd {
-        Value::String(s) => s.clone(),
-        Value::Array(obj) => obj
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => {
-            event.reply("未找到该模块");
-            return;
+            let segs = cf_help
+                .iter()
+                .map(|v| {
+                    let v = json!({
+                        "type": "text",
+                        "data": {
+                            "text": v
+                        }
+                    });
+                    Segment::new(
+                        "node",
+                        json!({
+                            "content": [v]
+                        }),
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            Message::from(segs)
+        }
+        text => {
+            let cmd = match help.get(text) {
+                Some(cmd) => cmd,
+                None => {
+                    event.reply("未找到该模块");
+                    return;
+                }
+            };
+
+            let msg = match cmd {
+                Value::String(s) => s.clone(),
+                Value::Array(obj) => obj
+                    .iter()
+                    .map(|v| v.as_str().unwrap())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                _ => {
+                    event.reply("未找到该模块");
+                    return;
+                }
+            };
+            Message::new().add_text(msg)
         }
     };
 

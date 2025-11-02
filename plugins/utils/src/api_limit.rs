@@ -1,6 +1,18 @@
 //! API 速率限制器模块
 //!
 //! 提供一个全局的、可跨 crate 使用的 API 访问管理器。
+//!
+//! # 示例
+//! ```rust
+//! use utils::api_limit::limit_api_call;
+//! use std::time::Duration;
+//!
+//! // 手动限制
+//! let result = limit_api_call("MY_API", Duration::from_secs(1), 5, async {
+//!     // API 调用
+//!     "data"
+//! }).await;
+//! ```
 
 use kovi::tokio::{
     self,
@@ -36,15 +48,13 @@ impl ApiLimiter {
     {
         let permit = self.sem.clone().acquire_owned().await.unwrap();
 
-        let result = f.await;
-
         let gap = self.gap;
         kovi::spawn(async move {
             tokio::time::sleep(gap).await;
             drop(permit);
         });
 
-        result
+        f.await
     }
 }
 

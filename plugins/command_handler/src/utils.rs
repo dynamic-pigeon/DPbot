@@ -1,7 +1,4 @@
-use kovi::{
-    Message,
-    chrono::{self, Utc},
-};
+use kovi::Message;
 
 use anyhow::{Error, Result};
 use kovi::serde_json::Value;
@@ -29,14 +26,8 @@ pub fn mes_to_text(msg: &Message) -> String {
         .collect::<String>()
 }
 
-#[inline]
-pub fn today_utc() -> chrono::DateTime<Utc> {
-    let offset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
-    chrono::Utc::now().with_timezone(&offset).to_utc()
-}
-
 // 解析指令并替换
-pub fn change(args: &mut [String], commands: &Value) -> Result<(String, bool)> {
+pub(crate) fn change(args: &mut [String], commands: &Value) -> Result<(String, bool)> {
     let mut changed = false;
 
     let command = args.iter_mut().try_fold(commands, |point, arg| {
@@ -46,7 +37,7 @@ pub fn change(args: &mut [String], commands: &Value) -> Result<(String, bool)> {
             _ => return Err(Error::msg("Invalid command structure")),
         };
 
-        let (key, flag) = map
+        let (key, not_same) = map
             .iter()
             .filter_map(|(k, _)| {
                 let diff = strsim::normalized_damerau_levenshtein(k, arg);
@@ -58,12 +49,12 @@ pub fn change(args: &mut [String], commands: &Value) -> Result<(String, bool)> {
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|(k, diff)| {
-                let flag = (diff - 1.0).abs() >= 1e-6;
-                (k, flag)
+                let not_same = (diff - 1.0).abs() >= f64::EPSILON;
+                (k, not_same)
             })
             .ok_or_else(|| Error::msg("Invalid command"))?;
 
-        if flag {
+        if not_same {
             changed = true;
             *arg = key.to_string();
         }
@@ -88,7 +79,7 @@ pub(crate) async fn fetch_cf_api<F: Future>(future: F) -> F::Output {
         .await
 }
 
-pub async fn get_user_rating(cf_id: &str) -> Result<i64> {
+pub(crate) async fn get_user_rating(cf_id: &str) -> Result<i64> {
     let res = fetch(&format!(
         "https://codeforces.com/api/user.info?handles={}",
         cf_id

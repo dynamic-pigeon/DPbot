@@ -11,7 +11,6 @@ pub(crate) mod atcoder;
 pub(crate) mod codeforces;
 pub(crate) mod config;
 pub(crate) mod duel;
-pub(crate) mod error;
 pub(crate) mod sql;
 pub(crate) mod utils;
 

@@ -1,9 +1,9 @@
 use anyhow::Result;
+use kovi::chrono::Local;
 
 use crate::duel::problem::Problem;
-use crate::sql::utils::Commit;
 use crate::sql::POOL;
-use crate::utils::today_utc;
+use crate::sql::utils::Commit;
 
 pub trait CommitProblemExt {
     async fn set_daily_problem(&mut self, problem: &Problem) -> Result<&mut Self>;
@@ -16,7 +16,7 @@ impl CommitProblemExt for Commit {
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Transaction not started"))?;
 
-        let now = today_utc().format("%Y-%m-%d").to_string();
+        let now = Local::now().format("%Y-%m-%d").to_string();
 
         let _ = sqlx::query(
             r#"
@@ -36,7 +36,7 @@ impl CommitProblemExt for Commit {
 
 pub async fn get_daily_problem() -> Result<Problem> {
     let sql = POOL.get().unwrap();
-    let now = today_utc().format("%Y-%m-%d").to_string();
+    let now = Local::now().format("%Y-%m-%d").to_string();
 
     let res: (i64, String, i64) = sqlx::query_as(
         r#"

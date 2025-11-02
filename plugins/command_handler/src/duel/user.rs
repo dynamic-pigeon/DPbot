@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc};
 use crate::{
     duel::submission::get_last_submission,
     sql::{self, duel::user::CommitUserExt},
-    utils::today_utc,
 };
 use anyhow::Result;
 use kovi::{chrono, log::info, tokio::sync::RwLock};
@@ -122,7 +121,7 @@ impl Bind {
     fn new(cf_id: String) -> Self {
         Self {
             cf_id,
-            start_time: today_utc(),
+            start_time: chrono::Utc::now(),
         }
     }
 
