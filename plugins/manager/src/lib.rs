@@ -95,7 +95,7 @@ async fn handle_help(event: &MsgEvent) {
             Message::from(segs)
         }
         "cf" => {
-            let cf_help = &*config::CF_HELP;
+            let cf_help = config::CF_HELP;
 
             let segs = cf_help
                 .iter()

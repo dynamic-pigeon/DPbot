@@ -7,6 +7,6 @@ edition = "2024"
 kovi.workspace = true
 anyhow.workspace = true
 serde.workspace = true
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { workspace = true }
 pulldown-cmark = "0.13.0"
 base64 = "0.22"

@@ -8,4 +8,4 @@ kovi.workspace = true
 serde.workspace = true
 anyhow.workspace = true
 utils.workspace = true
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { workspace = true }

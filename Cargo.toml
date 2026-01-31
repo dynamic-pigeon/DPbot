@@ -28,3 +28,8 @@ kovi = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 anyhow = "1.0"
 utils = { version = "0.1.0", path = "plugins/utils" }
+reqwest = { version = "0.13.1", features = ["json", "rustls"] }
+
+[profile.release]
+strip = true
+lto = true
